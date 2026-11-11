@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Gitarrenriffs, Melodien und Drumgrooves erstellen, bearbeiten und als MIDI exportieren.">
+  <title>Fuzz Room – Gitarren- und Drumstudio</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="audio.js" defer></script>
+  <script src="patterns.js" defer></script>
+  <script src="midi.js" defer></script>
+  <script src="studio.js" defer></script>
+  <script src="arrangement.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="masthead"><span><i></i> FUZZ ROOM</span><span>LOOP STUDIO / 19</span></header>
+    <section class="intro">
+      <p class="eyebrow">GITARRE × DRUMS</p>
+      <h1>Fuzz Room<span>.</span></h1>
+      <p class="subtitle">Riffs, Melodien und Drums – vom Loop zum Song.</p>
+      <div class="settings" aria-label="Loop-Einstellungen">
+        <label>Stil <select id="style"><option value="stoner">Stoner Rock</option><option value="punk">Punk Rock</option><option value="hard">Hard Rock</option></select></label>
+        <label>Grundton <select id="key"></select></label>
+        <label>Tonart <select id="scale"><option value="minor">Moll</option><option value="major">Dur</option><option value="phrygian">Phrygisch</option><option value="blues">Blues</option></select></label>
+        <label>Tempo (BPM) <input id="tempo" type="number" min="55" max="210" step="1" value="90" required></label>
+        <label>Gitarrenspur <select id="mode"><option value="riff">Riff</option><option value="melody">Melodie</option></select></label>
+        <label>Melodiestil <select id="melody-style"><option value="desert">Wüstenrock (Kyuss)</option><option value="psych">Psych Stoner (Stoned Jesus)</option><option value="stoner">Stoner Rock</option><option value="blues">Blues</option></select></label>
+      </div>
+      <div class="ai-tools" role="group" aria-label="Spuren mit ChatGPT"><button id="open-ai-riff" type="button">Riff mit ChatGPT</button><button id="open-ai-drums" type="button">Drums mit ChatGPT</button><div class="ai-arrangement-pair"><button id="open-ai-melody" type="button">Melodie mit ChatGPT</button><button id="open-ai-arrangement" class="arrangement-button" type="button">Arrangement mit ChatGPT</button></div><span id="ai-status" role="status"></span></div>
+      <section id="ai-comparison" class="ai-comparison" aria-label="Versionen vergleichen" hidden>
+        <strong id="ai-comparison-title">Versionen vergleichen</strong>
+        <p id="ai-comparison-status" role="status"></p>
+        <div class="ai-compare-actions"><button id="ai-before" type="button" aria-pressed="true">Bisherige anhören</button><button id="ai-after" type="button" aria-pressed="false">Neue anhören</button><button id="ai-adopt" class="play" type="button">Neue übernehmen</button><button id="ai-discard" type="button">Neue verwerfen</button></div>
+        <p class="editor-note">Beim Abspielen wechselt die Version am Loop-Anfang. Weitere Bearbeitungen beenden den Vergleich mit der ausgewählten Version.</p>
+      </section>
+    </section>
+
+    <section class="song-panel" aria-labelledby="song-title">
+      <div class="editor-head"><h2 id="song-title">Dein Song</h2><button id="open-ai-section" class="arrangement-button" type="button">Songteil mit ChatGPT hinzufügen</button></div>
+      <div id="song-parts" class="song-parts" role="group" aria-label="Songteile in Reihenfolge"></div>
+      <div class="song-actions"><label for="section-name">Name des geöffneten Teils</label><input id="section-name" maxlength="60" value="Vorhandenes Riff"><button id="play-song" class="play" type="button">Ganzen Song abspielen</button></div>
+      <div class="song-actions" role="group" aria-label="Arrangement-Datei"><button id="save-arrangement" type="button">Arrangement speichern</button><button id="import-arrangement" type="button">Arrangement importieren</button><input id="arrangement-file" type="file" accept=".json,application/json" hidden></div>
+      <p id="arrangement-status" class="editor-note" role="status">Speichere alle Songteile als Datei auf deinem Gerät und lade sie später wieder zum Bearbeiten.</p>
+      <p id="song-status" class="editor-note" role="status">Öffne einen Teil zum Bearbeiten. Mit den Pfeilen änderst du die Reihenfolge.</p>
+    </section>
+    <section class="deck" aria-label="Loop-Player">
+      <div class="transport">
+        <button id="play" class="play"><span id="play-icon" aria-hidden="true">▶</span> <span id="play-label">Teil als Loop abspielen</span></button>
+        <div class="position"><span id="status" role="status">Bereit</span><span id="counter" aria-hidden="true">01 / 04</span></div>
+      </div>
+      <div id="timeline" class="timeline" role="group" aria-label="Loop und Riffanschläge"></div>
+      <div class="articulation-legend" aria-label="Farben der Gitarrenanschläge"><span class="stroke-open">O · Offen</span><span class="stroke-mute">PM · Palm Mute</span><span class="stroke-single">♪ · Melodie</span></div>
+      <p class="timeline-hint">Klicke auf einen Riffanschlag, um zwischen offen und Palm Mute zu wechseln.</p>
+      <div class="tracks">
+        <div class="track"><div class="track-title"><span>01</span> GITARRE <small id="guitar-name" aria-live="polite"></small></div><div class="track-tools" role="group" aria-label="Gitarrenaktionen"><label class="lock"><input id="lock-guitar" type="checkbox"> Gitarre sperren</label><button id="new-guitar" type="button">Neues Riff</button><button id="poly-riff" type="button">Mehrstimmiges Riff</button><button id="variation" type="button" title="Nur Takt 4 neu erzeugen">Takt 4 variieren</button><button id="track-ai-guitar" type="button">Riff mit ChatGPT</button><button id="export-guitar" class="midi-export" data-track="riff" type="button">Riff als MIDI</button></div></div>
+        <div class="preset-strip" id="presets" role="group" aria-label="Stoner-Rock-Beispiele"><span>BEISPIELE</span><button type="button" data-preset="0" aria-pressed="true">Palm Mute</button><button type="button" data-preset="1" aria-pressed="false">Offene Akkorde</button></div>
+        <div class="track"><div class="track-title"><span>02</span> DRUMS <small id="groove" aria-live="polite"></small></div><div class="track-tools"><label class="lock"><input id="lock-drums" type="checkbox"> Drums sperren</label><button id="change-drums" type="button">Drums variieren</button><button id="new-drums" type="button">Neue Drums</button><button id="track-ai-drums" type="button">Drums mit ChatGPT</button><button id="export-drums" class="midi-export" data-track="drums" type="button">Drums als MIDI</button></div></div>
+        <div class="track" id="lead-track"><div class="track-title"><span>03</span> MELODIE <small id="lead-status" aria-live="polite">Optional</small></div><div class="track-tools"><label class="lock" id="mute-lead-label" hidden><input id="mute-lead" type="checkbox"> Melodie stumm</label><button id="toggle-lead" type="button" aria-pressed="false">Passende Melodie hinzufügen</button><button id="new-lead" type="button" hidden>Neue passende Melodie</button><button id="track-ai-melody" type="button">Melodie mit ChatGPT</button><button id="export-lead" class="midi-export" data-track="melody" type="button" hidden>Melodie als MIDI</button></div></div>
+      </div>
+    </section>
+    <footer><span>Spuränderungen sind ab dem nächsten Loop-Anfang hörbar.</span><button id="export" type="button">Alle Spuren als MIDI</button></footer>
+    <section class="mixer" aria-label="Lautstärke">
+      <div class="mixer-channel"><label>Gesamt <input id="volume" type="range" min="0" max="100" value="75"></label><button class="mixer-mute" id="volume-mute" type="button" aria-label="Mute für Gesamtlautstärke" aria-pressed="false">Mute</button></div>
+      <div class="mixer-channel"><label>Gitarrenriff <input id="guitar-volume" type="range" min="0" max="100" value="100"></label><button class="mixer-mute" id="guitar-volume-mute" type="button" aria-label="Mute für Gitarrenriff" aria-pressed="false">Mute</button></div>
+      <div class="mixer-channel"><label>Drums <input id="drum-volume" type="range" min="0" max="100" value="100"></label><button class="mixer-mute" id="drum-volume-mute" type="button" aria-label="Mute für Drums" aria-pressed="false">Mute</button></div>
+      <div class="mixer-channel"><label>Melodie <input id="lead-volume" type="range" min="0" max="100" value="75"></label><button class="mixer-mute" id="lead-volume-mute" type="button" aria-label="Mute für Melodie" aria-pressed="false">Mute</button></div>
+    </section>
+
+    <section class="editor" aria-labelledby="tab-title">
+      <div class="editor-head"><h2 id="tab-title">Gitarren-Tabs</h2><span>Drop D · D–A–D–G–H–E</span></div>
+      <p class="editor-note" id="lead-techniques" hidden>S = Slide · H = Hammer-on · B = Bending · V = Vibrato</p>
+      <div class="tab-scroll" tabindex="0" aria-label="Tabulatur des geöffneten Songteils"><pre id="tabs"></pre></div>
+      <div id="lead-tabs-panel" hidden><h3>Melodie</h3><div class="tab-scroll" tabindex="0" aria-label="Melodie-Tabulatur des geöffneten Songteils"><pre id="lead-tabs"></pre></div></div>
+    </section>
+    <section class="editor" id="riff-editor" aria-labelledby="riff-editor-title">
+      <div class="editor-head"><h2 id="riff-editor-title">Riff-Raster</h2><div id="riff-bar-picker" class="bar-picker" role="group" aria-label="Takt des Riffs"></div></div>
+      <div class="raster-transport" role="group" aria-label="Riff-Wiedergabe"><button id="riff-play" type="button" aria-label="Alle Spuren abspielen am Riff-Raster">▶ Play</button><button id="riff-solo" type="button" aria-label="Solo für Riff-Raster" aria-pressed="false">Solo</button><button id="riff-undo" type="button" disabled aria-label="Riff rückgängig">↶ Rückgängig</button><button id="riff-redo" type="button" disabled aria-label="Riff wiederholen">↷ Wiederholen</button><span id="riff-history" class="raster-history"></span><span id="riff-solo-state" class="raster-solo-state" role="status"></span><span id="riff-position" class="raster-position" role="status"></span></div>
+      <p class="editor-note riff-key" id="riff-key"></p><div class="drum-guide-controls" role="group" aria-label="Drum-Markierungen im Riff-Raster"><button id="riff-guide-snare" class="guide-toggle-snare" type="button" aria-pressed="false">Snare</button><button id="riff-guide-kick" class="guide-toggle-kick" type="button" aria-pressed="false">Kick</button></div>
+      <div class="articulation-buttons" role="group" aria-label="Spielweise für neue Riffanschläge"><input id="riff-articulation" type="hidden" value="open"><button id="riff-articulation-open" class="stroke-open" type="button" aria-pressed="true" title="Neue Riffanschläge offen spielen">Offen</button><button id="riff-articulation-mute" class="stroke-mute" type="button" aria-pressed="false" title="Neue Riffanschläge mit Palm Mute spielen">PM</button></div>
+      <p class="editor-note">Linksklick setzt oder löscht einen Ton. Rechtsklick entfernt einen Sechzehntelschritt. Ziehe mit gedrückter linker Maustaste, um die Länge einer Stimme zu ändern.</p>
+      <div class="grid-scroll riff-scroll"><div id="riff-grid" role="group" aria-label="Rifftöne"></div></div>
+      <p class="editor-note riff-edit-status" id="riff-edit-status" role="status"></p>
+    </section>
+    <section class="editor" aria-labelledby="melody-editor-title">
+      <div class="editor-head"><h2 id="melody-editor-title">Melodieraster</h2><div id="melody-bar-picker" role="group" aria-label="Takt der Melodie"></div></div>
+      <div class="raster-transport" role="group" aria-label="Melodie-Wiedergabe"><button id="melody-play" type="button" aria-label="Alle Spuren abspielen am Melodie-Raster">▶ Play</button><button id="melody-solo" type="button" aria-label="Solo für Melodie-Raster" aria-pressed="false">Solo</button><button id="melody-undo" type="button" disabled aria-label="Melodie rückgängig">↶ Rückgängig</button><button id="melody-redo" type="button" disabled aria-label="Melodie wiederholen">↷ Wiederholen</button><span id="melody-history" class="raster-history"></span><span id="melody-solo-state" class="raster-solo-state" role="status"></span><span id="melody-position" class="raster-position" role="status"></span></div>
+      <p class="editor-note melody-key" id="melody-key"></p><div class="drum-guide-controls" role="group" aria-label="Drum-Markierungen im Melodie-Raster"><button id="melody-guide-snare" class="guide-toggle-snare" type="button" aria-pressed="false">Snare</button><button id="melody-guide-kick" class="guide-toggle-kick" type="button" aria-pressed="false">Kick</button></div>
+      <div class="melody-length-tools">
+        <label>Notenlänge <select id="melody-length"><option value="0">Automatisch</option><option value="1">Sechzehntel</option><option value="2">Achtel</option><option value="4">Viertel</option><option value="8">Halbe Note</option><option value="16">1 Takt</option><option value="32">2 Takte</option><option value="64">4 Takte</option></select></label>
+      </div>
+      <p class="editor-note">Linksklick setzt oder löscht einen Ton. Rechtsklick entfernt einen Sechzehntelschritt. Ziehe mit gedrückter linker Maustaste, um seine Länge zu ändern.</p>
+      <p class="editor-note">Tonumfang D2–D6 · vier Oktaven · ★ markiert den Grundton</p><div class="grid-scroll melody-scroll"><div id="melody-grid" role="group" aria-label="Melodietöne"></div></div>
+      <div class="melody-techniques" id="melody-tools" role="group" aria-label="Werkzeuge für vorhandene Töne">
+        <button type="button" data-tool="hammer" aria-pressed="false">H · Hammer-on</button>
+        <button type="button" data-tool="bend-half" aria-pressed="false">B · Halbton-Bending</button>
+        <button type="button" data-tool="bend-whole" aria-pressed="false">B · Ganzton-Bending</button>
+        <button type="button" data-tool="bend-up-return" aria-pressed="false">B↑↓ · Ganzton hoch &amp; zurück</button>
+        <button type="button" data-tool="bend-release" aria-pressed="false">B↓ · Ganzton oben starten &amp; absenken</button>
+        <button type="button" data-tool="clear" aria-pressed="false">Technik entfernen</button>
+        <button type="button" data-tool="length" aria-pressed="false">Notenlänge anwenden</button>
+      </div>
+      <p class="editor-note melody-tool-status" id="melody-tool-status" role="status">Wähle ein Werkzeug und dann einen lila Ton.</p>
+    </section>
+    <section class="editor" aria-labelledby="drum-title">
+      <div class="editor-head"><h2 id="drum-title">Drumraster</h2><div id="bar-picker" role="group" aria-label="Takt zum Bearbeiten"></div></div>
+      <div class="raster-transport" role="group" aria-label="Drum-Wiedergabe"><button id="drums-play" type="button" aria-label="Alle Spuren abspielen am Drums-Raster">▶ Play</button><button id="drums-solo" type="button" aria-label="Solo für Drums-Raster" aria-pressed="false">Solo</button><button id="drums-undo" type="button" disabled aria-label="Drums rückgängig">↶ Rückgängig</button><button id="drums-redo" type="button" disabled aria-label="Drums wiederholen">↷ Wiederholen</button><span id="drums-history" class="raster-history"></span><span id="drums-solo-state" class="raster-solo-state" role="status"></span><span id="drums-position" class="raster-position" role="status"></span></div>
+      <p class="editor-note">Wähle einen Takt und klicke auf ein Feld, um einen Schlag zu setzen oder zu entfernen.</p>
+      <div class="grid-scroll"><div id="drum-grid"></div></div>
+    </section>
+    <p class="credit">Hörprototyp mit modellierter E-Gitarre und modelliertem Drumkit.</p>
+  </main>
+  <dialog id="ai-melody-dialog" aria-labelledby="ai-dialog-title">
+    <form id="ai-melody-form">
+      <h2 id="ai-dialog-title">Melodie mit ChatGPT</h2>
+      <p class="editor-note" id="ai-context"></p>
+      <div id="ai-section-fields" hidden>
+        <label for="ai-section-type">Welcher Songteil?</label><select id="ai-section-type"><option value="Intro">Intro</option><option value="Strophe">Strophe / Verse</option><option value="Pre-Chorus">Pre-Chorus</option><option value="Refrain">Chorus / Refrain</option><option value="Bridge" selected>Bridge</option><option value="Solo">Solo</option><option value="Breakdown">Breakdown</option><option value="Outro">Outro</option></select>
+        <label for="ai-section-bars">Länge</label><select id="ai-section-bars"><option value="4">4 Takte</option><option value="8">8 Takte</option><option value="16">16 Takte</option></select>
+      </div>
+      <label for="ai-description">Kurze Klangbeschreibung</label>
+      <textarea id="ai-description" rows="4" maxlength="400" placeholder="Zum Beispiel: düsterer Aufbau, lange Töne und am Ende ein kräftiges Bending."></textarea>
+      <p class="editor-note" id="ai-dialog-help">Kopiere die Anfrage mit deinen Einstellungen und den passenden Begleitspuren. Füge sie in deinen eigenen ChatGPT-Chat ein.</p>
+      <div class="ai-copy-actions"><button id="ai-copy" type="button">Anfrage kopieren</button><a href="https://chatgpt.com/" target="_blank" rel="noopener">ChatGPT öffnen</a></div>
+      <details id="ai-prompt-preview" hidden><summary>Anfrage anzeigen</summary><textarea id="ai-prompt" rows="4" readonly aria-label="Fertige Anfrage für ChatGPT"></textarea></details>
+      <label for="ai-response">Antwort von ChatGPT</label>
+      <textarea id="ai-response" rows="4" required placeholder="Kopiere den JSON-Code aus der Antwort hierher."></textarea>
+      <p id="ai-dialog-status" role="status"></p>
+      <div class="ai-dialog-actions"><button id="ai-cancel" type="button">Schließen</button><button id="ai-import" class="play" type="submit">Melodie vergleichen</button></div>
+    </form>
+  </dialog>
+  <dialog id="arrangement-import-dialog" aria-labelledby="arrangement-import-title">
+    <h2 id="arrangement-import-title">Arrangement importieren</h2>
+    <p id="arrangement-import-summary"></p>
+    <p>Beim Laden wird das geöffnete Arrangement ersetzt. Du kannst es vorher als Datei speichern.</p>
+    <div class="ai-dialog-actions"><button id="arrangement-save-current" type="button">Aktuelles speichern</button><button id="arrangement-import-cancel" type="button">Abbrechen</button><button id="arrangement-import-confirm" class="play" type="button">Arrangement laden</button></div>
+  </dialog>
+</body>
+</html>
