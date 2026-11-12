@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Gitarrenriffs, Melodien und Drumgrooves erstellen, bearbeiten und als MIDI exportieren.">
   <title>Fuzz Room – Gitarren- und Drumstudio</title>
-  <link rel="stylesheet" href="style.css?v=32">
+  <link rel="stylesheet" href="style.css?v=33">
   <script src="audio.js" defer></script>
-  <script src="patterns.js?v=32" defer></script>
+  <script src="patterns.js?v=33" defer></script>
   <script src="midi.js" defer></script>
-  <script src="studio.js?v=32" defer></script>
-  <script src="arrangement.js?v=32" defer></script>
+  <script src="studio.js?v=33" defer></script>
+  <script src="arrangement.js?v=33" defer></script>
 </head>
 <body>
   <main>
@@ -83,7 +83,7 @@
       <div class="raster-transport" role="group" aria-label="Riff-Wiedergabe"><button id="riff-play" type="button" aria-label="Alle Spuren abspielen am Riff-Raster">▶ Play</button><button id="riff-solo" type="button" aria-label="Solo für Riff-Raster" aria-pressed="false">Solo</button><button id="riff-undo" type="button" disabled aria-label="Riff rückgängig">↶ Rückgängig</button><button id="riff-redo" type="button" disabled aria-label="Riff wiederholen">↷ Wiederholen</button><span id="riff-history" class="raster-history"></span><span id="riff-solo-state" class="raster-solo-state" role="status"></span><span id="riff-position" class="raster-position" role="status"></span></div>
       <p class="editor-note riff-key" id="riff-key"></p><div class="drum-guide-controls" role="group" aria-label="Drum-Markierungen im Riff-Raster"><button id="riff-guide-snare" class="guide-toggle-snare" type="button" aria-pressed="false">Snare</button><button id="riff-guide-kick" class="guide-toggle-kick" type="button" aria-pressed="false">Kick</button></div>
       <div class="articulation-buttons" role="group" aria-label="Spielweise für neue Riffanschläge"><input id="riff-articulation" type="hidden" value="open"><button id="riff-articulation-open" class="stroke-open" type="button" aria-pressed="true" title="Neue Riffanschläge offen spielen">Offen</button><button id="riff-articulation-mute" class="stroke-mute" type="button" aria-pressed="false" title="Neue Riffanschläge mit Palm Mute spielen">PM</button></div>
-      <p class="editor-note">Linksklick setzt oder löscht einen Ton. Rechtsklick entfernt einen Sechzehntelschritt. Ziehe mit gedrückter linker Maustaste, um jeden Ton einzeln zu verlängern – auch über andere Anschläge und Taktgrenzen hinweg.</p>
+      <p class="editor-note">Linksklick setzt oder löscht einen Ton. Rechtsklick entfernt einen Sechzehntelschritt. Ziehe mit gedrückter linker Maustaste, um die Länge einer Stimme zu ändern.</p>
       <div class="grid-scroll riff-scroll"><div id="riff-grid" role="group" aria-label="Rifftöne"></div></div>
       <p class="editor-note riff-edit-status" id="riff-edit-status" role="status"></p>
           </div>

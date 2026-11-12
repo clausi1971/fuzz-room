@@ -199,9 +199,8 @@ function editRiffSpan(bars, bar, step, pitch, offset, {end, cut, remove = false}
   const spans = riffVoiceSpans(note, pitch);
   const index = spans.findIndex(([start]) => start === offset);
   const [start, length] = spans[index];
-  const absoluteStart = bar * stepsPerBar + step;
-  const nextAttack = riffTimeline(bars).filter(voice => voice.pitch === pitch && voice.absoluteStep > absoluteStart + start).sort((a,b) => a.absoluteStep - b.absoluteStep)[0];
-  const limit = Math.min(bars.length * stepsPerBar - absoluteStart, nextAttack ? nextAttack.absoluteStep - absoluteStart : Infinity, spans[index + 1]?.[0] ?? Infinity);
+  const boundary = bars[bar].find(other => other.step > step)?.step ?? stepsPerBar;
+  const limit = Math.min(boundary - step, spans[index + 1]?.[0] ?? stepsPerBar);
   const pieces = remove ? [] : cut === undefined
     ? [[start, Math.min(limit - start, Math.max(1, end - step - start))]]
     : cutNoteStep(start, length, cut - step);
@@ -209,7 +208,7 @@ function editRiffSpan(bars, bar, step, pitch, offset, {end, cut, remove = false}
   if (!updated.length) return editRiffPitch(bars, bar, step, pitch, note.articulation);
   const result = bars.slice();
   result[bar] = bars[bar].map(other => other === note ? {...note, voicing: guitarFrets(note), voiceEdits: {...note.voiceEdits, [pitch]: updated}} : other);
-  return normalizeRiffSpans(result);
+  return result;
 }
 
 function findRiffVoicing(pitches, previous) {
@@ -250,16 +249,31 @@ function editRiffPitch(bars, bar, step, pitch, articulation) {
     const length = hit?.length ?? Math.min((next?.step ?? stepsPerBar) - step, articulation === 'mute' ? 1.6 : 4);
     const voiceEdits = Object.fromEntries(Object.entries(hit?.voiceEdits ?? {}).filter(([key]) => Number(key) !== pitch));
     notes.push({...hit, step, root: updated[0], length, articulation: hit?.articulation ?? articulation, voicing, voiceEdits});
+    if (!hit) {
+      const previous = bars[bar].findLast(note => note.step < step);
+      if (previous) {
+        const limit = step - previous.step;
+        const clipped = Object.fromEntries(guitarPitches(previous).map(pitch => [pitch, riffVoiceSpans(previous, pitch)
+          .filter(([start]) => start < limit).map(([start, length]) => [start, Math.min(length, limit - start)])]));
+        if (riffAttacks([previous]).some(voice => voice.step + voice.length > step)) {
+          const voicing = guitarFrets(previous).filter(([string, fret]) => clipped[tunings[string] + fret].length);
+          const previousIndex = notes.indexOf(previous);
+          if (voicing.length) {
+            notes[previousIndex] = {...previous, root: tunings[voicing[0][0]] + voicing[0][1], voicing, length: Math.min(previous.length, limit), voiceEdits: clipped};
+          } else notes.splice(previousIndex, 1);
+        }
+      }
+    }
   }
   result[bar] = notes.sort((a, b) => a.step - b.step);
-  return normalizeRiffSpans(result);
+  return result;
 }
 
 function generatePolyRiff(config) {
-  const riff = generateGuitar({...config, mode: 'riff'}, 0, false);
+  const riff = generateGuitar({...config, mode: 'riff'});
   const scale = intervals(config.scale);
   let lastTop;
-  return addRiffSustain(riff.map((notes, bar) => notes.map((note, index) => {
+  return riff.map((notes, bar) => notes.map((note, index) => {
     const rootString = note.root >= 45 ? 1 : 0;
     const rootFret = note.root - tunings[rootString];
     const frets = [...new Set([0, ...Array.from({length: 7}, (_, delta) => rootFret + delta - 3)])]
@@ -280,10 +294,10 @@ function generatePolyRiff(config) {
     const space = (notes[index + 1]?.step ?? stepsPerBar) - note.step;
     const articulation = index % 3 === 1 ? note.articulation : 'open';
     return {...note, articulation, voicing, length: articulation === 'open' ? Math.min(space - .18, 5.6) : note.length};
-  })), config);
+  }));
 }
 
-function generateGuitar(config, take = 0, sustain = true) {
+function generateGuitar(config, take = 0) {
   if (config.mode === 'melody') return makeLead(config, null, take);
   const style = styles[config.style];
   const scale = intervals(config.scale);
@@ -292,7 +306,7 @@ function generateGuitar(config, take = 0, sustain = true) {
   const motif = firstRhythm.map((_, index) => index === 0 ? 0 : pick(style.degrees));
   if (config.scale === 'phrygian' || config.scale === 'blues') motif[1] = config.scale === 'blues' ? 3 : 1;
   const progression = [0, pick(style.chords.slice(1)), 0, pick(style.chords.slice(1))];
-  const bars = progression.map((degree, bar) => {
+  return progression.map((degree, bar) => {
     const rhythm = bar % 2 === 0 ? firstRhythm : pick(style.rhythms);
     return rhythm.map((step, index) => {
       const last = index === rhythm.length - 1;
@@ -305,7 +319,6 @@ function generateGuitar(config, take = 0, sustain = true) {
       return {step, root: root + scale[tone], length, articulation, fifth};
     });
   });
-  return sustain ? addRiffSustain(bars, config) : bars;
 }
 
 const melodyPhrases = {
@@ -448,41 +461,4 @@ function makeBass(config, guitar, drums, behavior = 'riff') {
       return {step,root,length:Math.min(gap-.15,config.style==='punk'?1.8:behavior==='root'?7.8:3.8),articulation:'single'};
     });
   });
-}
-
-// Every voice has its own lifetime, including spans that cross a bar boundary.
-function riffTimeline(bars) {
-  return bars.flatMap((notes, bar) => riffAttacks(notes).map(voice => ({...voice, bar, absoluteStep: bar * stepsPerBar + voice.step})));
-}
-function normalizeRiffSpans(bars) {
-  const voices = riffTimeline(bars);
-  const end = bars.length * stepsPerBar;
-  return bars.map((notes, bar) => notes.map(note => {
-    const origin = bar * stepsPerBar + note.step;
-    const voiceEdits = Object.fromEntries(guitarPitches(note).map(pitch => [pitch, riffVoiceSpans(note, pitch).map(([offset, length]) => {
-      const start = origin + offset;
-      const next = voices.filter(voice => voice.pitch === pitch && voice.absoluteStep > start).reduce((limit, voice) => Math.min(limit, voice.absoluteStep), end);
-      return [offset, Math.min(length, next - start, end - start)];
-    }).filter(([, length]) => length > 0)]));
-    return {...note, length: Math.min(note.length, end - origin), voiceEdits};
-  }));
-}
-function addRiffSustain(bars, config) {
-  const result = structuredClone(bars);
-  const chance = {stoner:.75, hard:.35, punk:.12}[config.style] ?? .35;
-  const notes = result.flatMap((notes,bar) => notes.map(note => ({note,bar})));
-  for (let i = 0; i < notes.length - 1; i++) {
-    if (Math.random() >= chance) continue;
-    const {note,bar} = notes[i], next = notes[i+1];
-    const pitch = guitarPitches(note).findLast(pitch => !guitarPitches(next.note).includes(pitch));
-    if (pitch === undefined) continue;
-    // An open upper voice rings over a sparse answer instead of the whole chord.
-    const voicing = guitarFrets(note);
-    note.articulation = 'open'; note.voicing = voicing;
-    const distance = (next.bar-bar)*stepsPerBar + next.note.step-note.step;
-    note.voiceEdits = {...note.voiceEdits, [pitch]: [[0, distance + (config.style === 'stoner' ? 6 : config.style === 'hard' ? 3 : 1)]]};
-    const answer = guitarFrets(next.note).find(([string,fret]) => tunings[string]+fret !== pitch);
-    if (answer) {next.note.voicing = [answer];next.note.root = tunings[answer[0]]+answer[1];}
-  }
-  return normalizeRiffSpans(result);
 }
