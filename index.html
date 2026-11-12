@@ -75,17 +75,20 @@
       <div class="tab-scroll" tabindex="0" aria-label="Tabulatur des geöffneten Songteils"><pre id="tabs"></pre></div>
       <div id="lead-tabs-panel" hidden><h3>Melodie</h3><div class="tab-scroll" tabindex="0" aria-label="Melodie-Tabulatur des geöffneten Songteils"><pre id="lead-tabs"></pre></div></div>
     </section>
-    <section class="editor" id="riff-editor" aria-labelledby="riff-editor-title">
-      <div class="editor-head"><h2 id="riff-editor-title">Riff-Raster</h2><div id="riff-bar-picker" class="bar-picker" role="group" aria-label="Takt des Riffs"></div></div>
+    <details class="editor track-editor" data-track="riff" id="riff-editor" aria-labelledby="riff-editor-title">
+      <summary class="editor-head track-heading-bar track-summary"><h2 class="track-heading" id="riff-editor-title"><svg class="instrument-icon" viewBox="0 0 34 34" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17c-4-2-8 2-6 6-2 3 0 7 4 7s7-3 6-6c4-1 5-5 2-7l-2 2-2-2z"/><path d="m11 18 12-12 3 3-12 12M23 6l3-3 4 4-4 4M7 24l3-3M5 21l6 6"/></svg>Riff</h2><svg class="raster-chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 7 5 5 5-5"/></svg></summary>
+      <div class="track-editor-content"><div class="editor-head track-bar-controls"><div id="riff-bar-picker" class="bar-picker" role="group" aria-label="Takt des Riffs"></div></div>
       <div class="raster-transport" role="group" aria-label="Riff-Wiedergabe"><button id="riff-play" type="button" aria-label="Alle Spuren abspielen am Riff-Raster">▶ Play</button><button id="riff-solo" type="button" aria-label="Solo für Riff-Raster" aria-pressed="false">Solo</button><button id="riff-undo" type="button" disabled aria-label="Riff rückgängig">↶ Rückgängig</button><button id="riff-redo" type="button" disabled aria-label="Riff wiederholen">↷ Wiederholen</button><span id="riff-history" class="raster-history"></span><span id="riff-solo-state" class="raster-solo-state" role="status"></span><span id="riff-position" class="raster-position" role="status"></span></div>
       <p class="editor-note riff-key" id="riff-key"></p><div class="drum-guide-controls" role="group" aria-label="Drum-Markierungen im Riff-Raster"><button id="riff-guide-snare" class="guide-toggle-snare" type="button" aria-pressed="false">Snare</button><button id="riff-guide-kick" class="guide-toggle-kick" type="button" aria-pressed="false">Kick</button></div>
       <div class="articulation-buttons" role="group" aria-label="Spielweise für neue Riffanschläge"><input id="riff-articulation" type="hidden" value="open"><button id="riff-articulation-open" class="stroke-open" type="button" aria-pressed="true" title="Neue Riffanschläge offen spielen">Offen</button><button id="riff-articulation-mute" class="stroke-mute" type="button" aria-pressed="false" title="Neue Riffanschläge mit Palm Mute spielen">PM</button></div>
       <p class="editor-note">Linksklick setzt oder löscht einen Ton. Rechtsklick entfernt einen Sechzehntelschritt. Ziehe mit gedrückter linker Maustaste, um die Länge einer Stimme zu ändern.</p>
       <div class="grid-scroll riff-scroll"><div id="riff-grid" role="group" aria-label="Rifftöne"></div></div>
       <p class="editor-note riff-edit-status" id="riff-edit-status" role="status"></p>
-    </section>
-    <section class="editor" aria-labelledby="melody-editor-title">
-      <div class="editor-head"><h2 id="melody-editor-title">Melodieraster</h2><div id="melody-bar-picker" role="group" aria-label="Takt der Melodie"></div></div>
+          </div>
+    </details>
+    <details class="editor track-editor" data-track="melody" aria-labelledby="melody-editor-title">
+      <summary class="editor-head track-heading-bar track-summary"><h2 class="track-heading" id="melody-editor-title"><svg class="instrument-icon" viewBox="0 0 34 34" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17c-4-2-8 2-6 6-2 3 0 7 4 7s7-3 6-6c4-1 5-5 2-7l-2 2-2-2z"/><path d="m11 18 12-12 3 3-12 12M23 6l3-3 4 4-4 4M7 24l3-3M5 21l6 6"/><path class="solo-star" d="m26 18 1.4 3 3.3.4-2.4 2.3.6 3.3-2.9-1.6-2.9 1.6.6-3.3-2.4-2.3 3.3-.4z"/></svg>Melodie</h2><svg class="raster-chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 7 5 5 5-5"/></svg></summary>
+      <div class="track-editor-content"><div class="editor-head track-bar-controls"><div id="melody-bar-picker" role="group" aria-label="Takt der Melodie"></div></div>
       <div class="raster-transport" role="group" aria-label="Melodie-Wiedergabe"><button id="melody-play" type="button" aria-label="Alle Spuren abspielen am Melodie-Raster">▶ Play</button><button id="melody-solo" type="button" aria-label="Solo für Melodie-Raster" aria-pressed="false">Solo</button><button id="melody-undo" type="button" disabled aria-label="Melodie rückgängig">↶ Rückgängig</button><button id="melody-redo" type="button" disabled aria-label="Melodie wiederholen">↷ Wiederholen</button><span id="melody-history" class="raster-history"></span><span id="melody-solo-state" class="raster-solo-state" role="status"></span><span id="melody-position" class="raster-position" role="status"></span></div>
       <p class="editor-note melody-key" id="melody-key"></p><div class="drum-guide-controls" role="group" aria-label="Drum-Markierungen im Melodie-Raster"><button id="melody-guide-snare" class="guide-toggle-snare" type="button" aria-pressed="false">Snare</button><button id="melody-guide-kick" class="guide-toggle-kick" type="button" aria-pressed="false">Kick</button></div>
       <div class="melody-length-tools">
@@ -103,21 +106,26 @@
         <button type="button" data-tool="length" aria-pressed="false">Notenlänge anwenden</button>
       </div>
       <p class="editor-note melody-tool-status" id="melody-tool-status" role="status">Wähle ein Werkzeug und dann einen lila Ton.</p>
-    </section>
-    <section class="editor" aria-labelledby="bass-title">
-      <div class="editor-head"><h2 id="bass-title">Bassraster</h2><div id="bass-bar-picker" role="group" aria-label="Takt des Basses"></div></div>
+          </div>
+    </details>
+    <details class="editor track-editor" data-track="bass" aria-labelledby="bass-title">
+      <summary class="editor-head track-heading-bar track-summary"><h2 class="track-heading" id="bass-title"><svg class="instrument-icon" viewBox="0 0 34 34" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 19c-3-2-6 1-5 4-2 4 1 7 5 7 4-1 5-4 4-7 4-1 4-4 2-6l-3 3z"/><path d="M11 20 24 4l3 2-13 16M24 4l2-3 4 3-3 4M6 24l4 3M7 23l4 3M8 22l4 3M9 21l4 3"/></svg>Bass</h2><svg class="raster-chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 7 5 5 5-5"/></svg></summary>
+      <div class="track-editor-content"><div class="editor-head track-bar-controls"><div id="bass-bar-picker" role="group" aria-label="Takt des Basses"></div></div>
       <div class="raster-transport" role="group" aria-label="Bass-Wiedergabe"><button id="bass-play" type="button" aria-label="Alle Spuren abspielen am Bass-Raster">▶ Play</button><button id="bass-solo" type="button" aria-label="Solo für Bass-Raster" aria-pressed="false">Solo</button><button id="bass-undo" type="button" aria-label="Bass rückgängig" disabled>↶ Rückgängig</button><button id="bass-redo" type="button" aria-label="Bass wiederholen" disabled>↷ Wiederholen</button><span id="bass-history" class="raster-history"></span><span id="bass-solo-state" class="raster-solo-state"></span><span id="bass-position" class="raster-position"></span></div>
       <p id="bass-key" class="editor-note"></p>
       <div class="melody-length-tools"><label>Notenlänge <select id="bass-length"><option value="1">Sechzehntel</option><option value="2">Achtel</option><option value="4" selected>Viertel</option><option value="8">Halbe Note</option><option value="16">1 Takt</option><option value="32">2 Takte</option><option value="64">4 Takte</option></select></label></div>
       <p class="editor-note">Linksklick setzt oder löscht einen Ton. Ziehen verlängert die Note, Rechtsklick entfernt einen Sechzehntelschritt.</p>
       <div class="grid-scroll melody-scroll"><div id="bass-grid" role="group" aria-label="Basstöne"></div></div>
-    </section>
-    <section class="editor" aria-labelledby="drum-title">
-      <div class="editor-head"><h2 id="drum-title">Drumraster</h2><div id="bar-picker" role="group" aria-label="Takt zum Bearbeiten"></div></div>
+          </div>
+    </details>
+    <details class="editor track-editor" data-track="drums" aria-labelledby="drum-title">
+      <summary class="editor-head track-heading-bar track-summary"><h2 class="track-heading" id="drum-title"><svg class="instrument-icon" viewBox="0 0 34 34" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="16" cy="21" rx="10" ry="4"/><path d="M6 21v7c0 5 20 5 20 0v-7M10 23v6M16 25v6M22 23v6M3 10h10M8 10v9M22 10h8M26 10v8M10 4l13 12M25 3 13 15"/></svg>Drums</h2><svg class="raster-chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 7 5 5 5-5"/></svg></summary>
+      <div class="track-editor-content"><div class="editor-head track-bar-controls"><div id="bar-picker" role="group" aria-label="Takt zum Bearbeiten"></div></div>
       <div class="raster-transport" role="group" aria-label="Drum-Wiedergabe"><button id="drums-play" type="button" aria-label="Alle Spuren abspielen am Drums-Raster">▶ Play</button><button id="drums-solo" type="button" aria-label="Solo für Drums-Raster" aria-pressed="false">Solo</button><button id="drums-undo" type="button" disabled aria-label="Drums rückgängig">↶ Rückgängig</button><button id="drums-redo" type="button" disabled aria-label="Drums wiederholen">↷ Wiederholen</button><span id="drums-history" class="raster-history"></span><span id="drums-solo-state" class="raster-solo-state" role="status"></span><span id="drums-position" class="raster-position" role="status"></span></div>
       <p class="editor-note">Wähle einen Takt und klicke auf ein Feld, um einen Schlag zu setzen oder zu entfernen.</p>
       <div class="grid-scroll"><div id="drum-grid"></div></div>
-    </section>
+          </div>
+    </details>
     <p class="credit">Hörprototyp mit modellierter E-Gitarre und modelliertem Drumkit.</p>
   </main>
   <dialog id="ai-melody-dialog" aria-labelledby="ai-dialog-title">

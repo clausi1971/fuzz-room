@@ -242,3 +242,21 @@ span.tone-blues-seven,.tone-blues-seven > .drum-label {color:#9bbfe5;font-weight
 #arrangement-save-dialog {width:min(30rem,calc(100% - 2rem));padding:1.3rem;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:.7rem}
 #arrangement-save-dialog::backdrop {background:#0a0806b8}
 #arrangement-filename {display:block;width:100%;margin:.5rem 0;padding:.6rem;font:inherit;color:var(--text);background:#16140f;border:1px solid var(--border);border-radius:.3rem}
+.track-editor[data-track="riff"] {--track-color:var(--open)}
+.track-editor[data-track="melody"] {--track-color:var(--single)}
+.track-editor[data-track="bass"] {--track-color:var(--bass)}
+.track-editor[data-track="drums"] {--track-color:var(--gold)}
+.editor.track-editor {background:color-mix(in srgb,var(--track-color) 5%,var(--panel));border-color:color-mix(in srgb,var(--track-color) 42%,var(--border));border-top:3px solid var(--track-color)}
+.track-heading-bar {background:color-mix(in srgb,var(--track-color) 13%,var(--panel));border-left:5px solid var(--track-color);border-radius:.45rem;padding:.7rem .85rem;margin-bottom:.85rem}
+.editor-head .track-heading {display:flex;align-items:center;gap:.65rem;font-size:clamp(1.55rem,2.2vw,1.9rem);line-height:1.2;font-weight:750;color:var(--track-color);letter-spacing:.01em}
+.instrument-icon {width:2.4rem;height:2.4rem;flex:none}
+.solo-star {fill:var(--track-color);stroke:var(--panel);stroke-width:.7}
+@media(max-width:40rem){.track-heading-bar {padding:.6rem}.editor-head .track-heading {font-size:1.55rem}.instrument-icon {width:2.1rem;height:2.1rem}}
+.track-summary {list-style:none;cursor:pointer;margin-bottom:0;user-select:none}
+.track-summary::-webkit-details-marker {display:none}
+.track-summary:focus-visible {outline:2px solid var(--track-color);outline-offset:4px}
+.track-editor[open] > .track-summary {margin-bottom:.9rem}
+.track-bar-controls {justify-content:flex-end;margin-bottom:.75rem}
+.raster-chevron {width:1.45rem;height:1.45rem;color:var(--track-color);flex:none;transition:transform .15s ease}
+.track-editor:not([open]) > .track-summary .raster-chevron {transform:rotate(-90deg)}
+@media(prefers-reduced-motion:reduce){.raster-chevron {transition:none}}
