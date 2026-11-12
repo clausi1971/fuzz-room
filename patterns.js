@@ -11,7 +11,9 @@ const drumVoices = [
   {id: 'snare', name: 'Snare', midi: 38, velocity: .84, delay: .009},
   {id: 'hat', name: 'Hi-Hat', midi: 42, velocity: .39, delay: .005},
   {id: 'open', name: 'Hi-Hat offen', midi: 46, velocity: .39, delay: .005},
-  {id: 'tom', name: 'Tom', midi: 45, velocity: .63, delay: .007},
+  {id: 'tom-high', name: 'Hohe Tom', midi: 50, velocity: .63, delay: .007},
+  {id: 'tom-mid', name: 'Mittlere Tom', midi: 47, velocity: .66, delay: .007},
+  {id: 'tom', name: 'Standtom', midi: 41, velocity: .70, delay: .007},
   {id: 'crash', name: 'Crash', midi: 49, velocity: .44, delay: .004},
 ];
 const drumVoice = Object.fromEntries(drumVoices.map(voice => [voice.id, voice]));
@@ -424,7 +426,7 @@ function makeGroove(config, guitar, variation, fresh = false) {
       if ((bar === 0 && step === 0) || (bar === 3 && step >= 12)) continue;
       add(step, variation === 1 && step % 4 === 2 ? 'open' : 'hat', step % 4 === 0 ? .44 : .27);
     }
-    if (bar === 3) (fresh ? [...fills[variation], pick([10, 11, 12, 13, 14])] : fills[variation]).forEach(step => add(step, 'tom'));
+    if (bar % 4 === 3) (fresh ? [...fills[variation], pick([10, 11, 12, 13, 14])] : fills[variation]).sort((a, b) => a - b).forEach((step, index, hits) => add(step, index === hits.length - 1 ? 'tom' : index % 2 ? 'tom-mid' : 'tom-high'));
     return beats;
   });
 }
@@ -437,4 +439,26 @@ function guitarFrets(note) {
   }
   const rootString = note.root >= 45 ? 1 : 0;
   return guitarPitches(note).map((pitch, index) => [rootString + index, pitch - tunings[rootString + index]]);
+}
+function bassPitches(config) {
+  return Array.from({length:30},(_,index)=>26+index).filter(pitch=>intervals(config.scale).includes((pitch-config.key+120)%12));
+}
+
+function makeBass(config, guitar, drums, behavior = 'riff') {
+  const pitches = bassPitches(config);
+  const nearest = target => pitches.reduce((best,pitch)=>Math.abs(pitch-target)<Math.abs(best-target)?pitch:best);
+  const home = 26 + (config.key + 10) % 12;
+  return guitar.map((notes,bar)=>{
+    const rhythm = behavior === 'root' ? [0,8] : behavior === 'independent'
+      ? [...new Set([0,6,10,...drums[bar].flatMap((hits,step)=>hits.some(hit=>hit.kind==='kick')?[step]:[])])].sort((a,b)=>a-b)
+      : [...new Set(notes.map(note=>note.step))];
+    return rhythm.map((step,index)=>{
+      const chord = notes.findLast(note=>note.step<=step) ?? notes[0];
+      let target = behavior === 'root' ? home : chord ? chord.root-12 : home;
+      while(target>55)target-=12;while(target<26)target+=12;
+      const root = nearest(target + (behavior==='independent' && index%3===2 ? 7 : 0));
+      const gap = (rhythm[index+1] ?? stepsPerBar)-step;
+      return {step,root,length:Math.min(gap-.15,config.style==='punk'?1.8:behavior==='root'?7.8:3.8),articulation:'single'};
+    });
+  });
 }

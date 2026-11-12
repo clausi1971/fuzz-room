@@ -86,6 +86,7 @@ function encodeMidi(pattern, only) {
       drums: ['Drums', drums],
     };
     if (pattern.lead) tracks.lead = ['Melodie', guitarEvents(pattern.lead, 1, 29)];
+    if (pattern.bass) tracks.bass = ['Bass', guitarEvents(pattern.bass, 2, 33)];
     if (only && !tracks[only]) return null;
     const chunks = only
       ? [track(tracks[only][0], [...timing, ...tracks[only][1]])]
@@ -94,14 +95,28 @@ function encodeMidi(pattern, only) {
     return new Uint8Array([...header, ...chunks.flat()]);
   }
   
+  let pendingMidi;
   function downloadMidi(pattern, only) {
     const midi = encodeMidi(pattern, only);
     if (!midi) return;
-    const url = URL.createObjectURL(new Blob([midi], {type: 'audio/midi'}));
-    const link = document.createElement('a');
-    link.href = url;
-    const part = {guitar: pattern.mode === 'melody' ? 'melodie' : 'riff', lead: 'melodie', drums: 'drums'}[only] ?? 'loop';
-    link.download = `fuzz-room-${part}-${pattern.tempo}bpm.mid`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const part = {guitar:pattern.mode==='melody'?'melodie':'riff',lead:'melodie',drums:'drums',bass:'bass'}[only]??'alle-spuren';
+    pendingMidi = midi;
+    document.getElementById('midi-filename').value = 'fuzz-room-'+part+'-'+pattern.tempo+'bpm';
+    document.getElementById('midi-export-dialog').showModal();
+    document.getElementById('midi-filename').focus();
+    document.getElementById('midi-filename').select();
   }
+  function midiFilename(value) {
+    const name = value.trim().replace(/\.midi?$/i,'').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/[. ]+$/,'');
+    return (name || 'fuzz-room') + '.mid';
+  }
+  document.getElementById('midi-export-form').addEventListener('submit', event => {
+    event.preventDefault();
+    if (!pendingMidi) return;
+    const url = URL.createObjectURL(new Blob([pendingMidi],{type:'audio/midi'}));
+    const link = document.createElement('a');link.href=url;link.download=midiFilename(document.getElementById('midi-filename').value);link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);pendingMidi=null;document.getElementById('midi-export-dialog').close();
+  });
+  function cancelMidiExport(){pendingMidi=null;document.getElementById('midi-export-dialog').close();}
+  document.getElementById('midi-export-cancel').addEventListener('click',cancelMidiExport);
+  document.getElementById('midi-export-dialog').addEventListener('cancel',()=>{pendingMidi=null;});

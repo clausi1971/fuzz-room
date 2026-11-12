@@ -227,3 +227,15 @@ span.tone-blues-seven,.tone-blues-seven > .drum-label {color:#9bbfe5;font-weight
 .grid-row.tone-blues-three {background:#efa99c0b}
 .grid-row.tone-blues-five {background:#ffda780f}
 .grid-row.tone-blues-seven {background:#9bbfe50b}
+:root {--bass:#8fc6ee}
+.bass-cell[aria-pressed="true"] {background:#315a76;border-color:var(--bass)}
+.bass-cell.bass-hold {background:#283e50;border-color:#547a96}
+.bass-hold::after {content:'';display:block;height:2px;margin:0 .18rem;background:var(--bass);border-radius:2px}
+.midi-export[data-track="bass"] {--midi-color:var(--bass);--midi-background:#213544}
+#ai-bass-fields[hidden] {display:none}
+#ai-bass-fields select {width:100%;padding:.5rem;margin-bottom:.8rem;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:.3rem}
+#midi-export-dialog {width:min(30rem,calc(100% - 2rem));padding:1.3rem;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:.7rem}
+#midi-export-dialog::backdrop {background:#0a0806b8}
+#midi-filename {display:block;width:100%;margin:.5rem 0;padding:.6rem;font:inherit;color:var(--text);background:#16140f;border:1px solid var(--border);border-radius:.3rem}
+.bass-steps {display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:1px;margin-top:.3rem}
+.bass-steps .beat.hit {background:var(--bass)}

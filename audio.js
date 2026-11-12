@@ -33,6 +33,15 @@ class LoopSound {
 
     this.guitarLevel = ctx.createGain();
     this.guitarLevel.connect(this.master);
+    this.bassLevel = ctx.createGain();
+    this.bassLevel.connect(this.master);
+    this.bassInput = this.filter('highpass', 28);
+    const bassDrive = ctx.createWaveShaper();
+    bassDrive.curve = Float32Array.from({length:4097},(_,i)=>Math.tanh((i/2048-1)*2.2));
+    bassDrive.oversample = '2x';
+    const bassOutput = ctx.createGain();
+    bassOutput.gain.value = .58;
+    this.bassInput.connect(bassDrive).connect(this.filter('lowpass',1500)).connect(bassOutput).connect(this.bassLevel);
 
     this.guitars = [-.9, .9].map(pan => {
       const input = this.filter('highpass', 65);
@@ -143,6 +152,12 @@ class LoopSound {
     }
   }
 
+  bass(time, note, stepDuration) {
+    const length = note.length * stepDuration;
+    this.voice(this.string(note.root, false, 0), time, length, .85, this.bassInput);
+    if (length > 1.7) this.sustainString(time, note.root, length, this.bassInput, 0, .13);
+  }
+
   sustainString(time, pitch, length, output, side = 0, level = .11, tail = .05) {
     const oscillator = this.context.createOscillator();
     const gain = this.context.createGain();
@@ -160,7 +175,7 @@ class LoopSound {
   }
 
   drumSample(kind, take) {
-    const durations = {kick: .46, snare: .48, hat: .15, open: .55, crash: 1.85, tom: .66};
+    const durations = {kick: .46, snare: .48, hat: .15, open: .55, crash: 1.85, 'tom-high': .47, 'tom-mid': .56, tom: .66};
     return this.sample(`${kind}${take}`, durations[kind], (data, rate) => {
       const metal = [2903, 3431, 4217, 5327, 6883, 7639];
       let phase = 0;
@@ -172,8 +187,8 @@ class LoopSound {
         low += .22 * (noise - low);
         high += .06 * (noise - high);
         let sound;
-        if (kind === 'kick' || kind === 'tom') {
-          const base = (kind === 'kick' ? 48 : 96) + take * 1.3;
+        if (kind === 'kick' || kind.startsWith('tom')) {
+          const base = ({kick:48,'tom-high':160,'tom-mid':123,tom:88}[kind]) + take * 1.3;
           phase += 2 * Math.PI / rate * (base + 76 * Math.exp(-time * 43));
           const decay = kind === 'kick' ? 10 : 7;
           sound = .9 * Math.sin(phase) * Math.exp(-time * decay)
@@ -196,7 +211,7 @@ class LoopSound {
   drum(time, kind, velocity) {
     const take = Math.floor(Math.random() * 3);
     const buffer = this.drumSample(kind, take);
-    const positions = {kick: 0, snare: .04, hat: -.29, open: -.29, tom: .33, crash: .52};
+    const positions = {kick: 0, snare: .04, hat: -.29, open: -.29, 'tom-high':-.2, 'tom-mid':.08, tom: .33, crash: .52};
     const panner = this.context.createStereoPanner();
     panner.pan.value = positions[kind];
     panner.connect(this.drums);
@@ -230,11 +245,12 @@ class LoopSound {
     this.master.gain.setTargetAtTime(value, this.context.currentTime, .012);
   }
 
-  setTrackLevels(guitar, drums, lead) {
+  setTrackLevels(guitar, drums, lead, bass = 1) {
     const now = this.context.currentTime;
     this.guitarLevel.gain.setTargetAtTime(guitar, now, .012);
     this.drumLevel.gain.setTargetAtTime(drums, now, .012);
     this.leadLevel.gain.setTargetAtTime(lead, now, .012);
+    this.bassLevel.gain.setTargetAtTime(bass, now, .012);
   }
 
   stop() {

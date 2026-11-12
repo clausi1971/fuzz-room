@@ -22,7 +22,7 @@ function projectText(value, max = 100) {
   return value;
 }
 
-function projectNotes(value, count, single, nullable = false) {
+function projectNotes(value, count, single, nullable = false, minPitch = 38, maxPitch = 86) {
   if (nullable && value === null) return null;
   projectCheck(Array.isArray(value) && value.length === count);
   return value.map((notes, bar) => {
@@ -33,7 +33,7 @@ function projectNotes(value, count, single, nullable = false) {
       const step = projectNumber(note.step, 0, 15, true);
       projectCheck(!positions.has(step)); positions.add(step);
       const articulation = projectChoice(note.articulation, single ? ['single'] : ['open', 'mute']);
-      const result = {step, root: projectNumber(note.root, 38, 86, true),
+      const result = {step, root: projectNumber(note.root, minPitch, maxPitch, true),
         length: projectNumber(note.length, .001, single ? count * 16 - bar * 16 - step : 16 - step), articulation};
       if (note.fifth !== undefined) result.fifth = projectNumber(note.fifth, 0, 24, true);
       if (note.transition !== undefined) result.transition = projectChoice(note.transition, ['slide', 'hammer']);
@@ -97,6 +97,7 @@ function projectDrums(value, count) {
 
 function projectDetails(value, field) {
   projectCheck(value && typeof value === 'object');
+  if (field === 'bass') return {bassName:projectText(value.bassName ?? 'Bass'),bassStyle:projectChoice(value.bassStyle ?? 'riff',['riff','root','independent'])};
   if (field === 'drums') return {grooveName: projectText(value.grooveName), groove: projectNumber(value.groove, 0, 2, true)};
   const melody = () => ({melodyEdited: Boolean(value.melodyEdited), leadTake: projectNumber(value.leadTake, 0, 2, true)});
   if (field === 'lead') return melody();
@@ -111,7 +112,7 @@ function readArrangement(text) {
   let value;
   try { value = JSON.parse(text); } catch { throw new Error('Die Datei ist keine gültige Arrangement-Datei.'); }
   projectCheck(value?.format === 'fuzz-room-arrangement', 'Wähle eine mit „Arrangement speichern“ erstellte Fuzz-Room-Datei.');
-  projectCheck(value.version === 1, 'Diese Dateiversion wird noch nicht unterstützt.');
+  projectCheck([1,2].includes(value.version), 'Diese Dateiversion wird noch nicht unterstützt.');
   projectCheck(Array.isArray(value.parts) && value.parts.length > 0 && value.parts.length <= 256);
   const ids = new Set();
   const parts = value.parts.map(part => {
@@ -126,18 +127,18 @@ function readArrangement(text) {
       key: projectNumber(p.key, 0, 11, true), scale: projectChoice(p.scale, Object.keys(scales)),
       tempo: projectNumber(p.tempo, 55, 210, true), mode,
       guitar: projectNotes(p.guitar, count, mode === 'melody'), drums: projectDrums(p.drums, count),
-      lead: projectNotes(p.lead, count, true, true)};
-    const details = {...projectDetails(meta, 'guitar'), ...projectDetails(meta, 'drums'), ...projectDetails(meta, 'lead'),
+      lead: projectNotes(p.lead, count, true, true), bass: projectNotes(p.bass ?? null,count,true,true,26,55)};
+    const details = {...projectDetails(meta, 'guitar'), ...projectDetails(meta, 'drums'), ...projectDetails(meta, 'lead'), ...projectDetails(meta, 'bass'),
       style: projectChoice(meta.style, ['stoner', 'punk', 'hard']),
       melodyStyle: projectChoice(meta.melodyStyle, ['desert', 'psych', 'stoner', 'blues']), muteLead: Boolean(meta.muteLead)};
     projectCheck(details.mode === mode);
-    const history = Object.fromEntries(['guitar', 'drums', 'lead'].map(field => {
+    const history = Object.fromEntries(['guitar', 'drums', 'lead', 'bass'].map(field => {
       const stored = part.history?.[field] ?? {past: [], future: []};
       const stacks = Object.fromEntries(['past', 'future'].map(stack => {
         projectCheck(Array.isArray(stored[stack]) && stored[stack].length <= 30);
         return [stack, stored[stack].map(snapshot => {
           const details = projectDetails(snapshot?.details, field);
-          const data = field === 'drums' ? projectDrums(snapshot.data, count)
+          const data = field === 'bass' ? projectNotes(snapshot.data,count,true,true,26,55) : field === 'drums' ? projectDrums(snapshot.data, count)
             : projectNotes(snapshot.data, count, field === 'lead' || details.mode === 'melody', field === 'lead');
           return {data, details};
         })];
@@ -147,7 +148,7 @@ function readArrangement(text) {
     return {id, name: projectText(part.name, 60), type: projectText(part.type, 60), pattern, meta: details, history};
   });
   projectCheck(ids.has(value.activeSection));
-  const levels = Object.fromEntries(mixerChannels.map(channel => [channel, projectNumber(value.mixer?.levels?.[channel], 0, 100)]));
+  const levels = Object.fromEntries(mixerChannels.map(channel => [channel, projectNumber(value.mixer?.levels?.[channel] ?? (channel==='bass-volume' && value.version===1?100:undefined), 0, 100)]));
   projectCheck(Array.isArray(value.mixer?.mutes) && value.mixer.mutes.every(channel => mixerChannels.includes(channel) && channel !== 'lead-volume'));
   const guides = Object.fromEntries(['riff', 'melody'].map(track => [track,
     Object.fromEntries(['snare', 'kick'].map(kind => [kind, Boolean(value.view?.guides?.[track]?.[kind])]))]));
@@ -160,7 +161,7 @@ function createArrangement() {
   if (chatComparison) throw new Error('Übernimm oder verwerfe zuerst die ChatGPT-Vorschau.');
   saveSection();
   songParts.forEach(sectionHistory);
-  const value = {format: 'fuzz-room-arrangement', version: 1, parts: songParts, activeSection,
+  const value = {format: 'fuzz-room-arrangement', version: 2, parts: songParts, activeSection,
     mixer: {levels: Object.fromEntries(mixerChannels.map(channel => [channel, Number(get(channel).value)])), mutes: [...mixerMutes]},
     locks: {guitar: get('lock-guitar').checked, drums: get('lock-drums').checked},
     view: {guides: drumGuides, articulation: get('riff-articulation').value}};
