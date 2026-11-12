@@ -68,7 +68,7 @@ function app() {
     URL:{createObjectURL(blob){const id='blob:'+blobs.size;blobs.set(id,blob);return id;},revokeObjectURL(){}},navigator:{clipboard:{writeText:async()=>{}}},
     setInterval(){return 1;},clearInterval(){},setTimeout(){},requestAnimationFrame(){return 1;},cancelAnimationFrame(){}});
   const run=code=>vm.runInContext(code,context);
-  for(const [,file] of html.matchAll(/<script src="([^"]+)"/g))run(fs.readFileSync(path.join(appDir,file),'utf8'));
+  for(const [,file] of html.matchAll(/<script src="([^"]+)"/g))run(fs.readFileSync(path.join(appDir,file.split('?')[0]),'utf8'));
   const fire=(id,event='click')=>get(id).handlers[event]({target:get(id),preventDefault(){}});
   const choose=(id,value)=>{get(id).value=value;fire(id,'change');};
   const plain=value=>JSON.parse(JSON.stringify(value));
