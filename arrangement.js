@@ -2,6 +2,8 @@
 
 const arrangementFileLimit = 50 * 1024 * 1024;
 let pendingArrangement;
+let pendingArrangementDownload;
+let lastArrangementName = 'fuzz-room-arrangement';
 
 function projectCheck(condition, message = 'Die Arrangement-Datei enthält ungültige Daten.') {
   if (!condition) throw new Error(message);
@@ -172,16 +174,39 @@ function createArrangement() {
 
 function saveArrangement() {
   try {
-    const text = createArrangement();
-    const url = URL.createObjectURL(new Blob([text], {type: 'application/json'}));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'fuzz-room-arrangement.json';
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    get('arrangement-status').textContent = 'Arrangement-Datei zum Speichern heruntergeladen – inklusive aller Songteile, Einstellungen und Rückgängig-Verläufe.';
+    pendingArrangementDownload = createArrangement();
+    get('arrangement-filename').value = lastArrangementName;
+    get('arrangement-save-dialog').showModal();
+    get('arrangement-filename').focus();
+    get('arrangement-filename').select();
   } catch (error) { get('arrangement-status').textContent = error.message; }
 }
+
+function arrangementFilename(value) {
+  const name = value.trim().replace(/\.json$/i, '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '');
+  return (name || 'fuzz-room-arrangement') + '.json';
+}
+
+get('arrangement-save-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!pendingArrangementDownload) return;
+  const filename = arrangementFilename(get('arrangement-filename').value);
+  const url = URL.createObjectURL(new Blob([pendingArrangementDownload], {type: 'application/json'}));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  lastArrangementName = filename.slice(0, -5);
+  pendingArrangementDownload = null;
+  get('arrangement-save-dialog').close();
+  get('arrangement-status').textContent = `${filename} heruntergeladen – inklusive aller Songteile, Einstellungen und Rückgängig-Verläufe.`;
+});
+get('arrangement-save-cancel').addEventListener('click', () => {
+  pendingArrangementDownload = null;
+  get('arrangement-save-dialog').close();
+});
+get('arrangement-save-dialog').addEventListener('cancel', () => { pendingArrangementDownload = null; });
 
 function loadArrangement(project) {
   if (playback) stop();

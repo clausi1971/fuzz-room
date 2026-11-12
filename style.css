@@ -239,3 +239,6 @@ span.tone-blues-seven,.tone-blues-seven > .drum-label {color:#9bbfe5;font-weight
 #midi-filename {display:block;width:100%;margin:.5rem 0;padding:.6rem;font:inherit;color:var(--text);background:#16140f;border:1px solid var(--border);border-radius:.3rem}
 .bass-steps {display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:1px;margin-top:.3rem}
 .bass-steps .beat.hit {background:var(--bass)}
+#arrangement-save-dialog {width:min(30rem,calc(100% - 2rem));padding:1.3rem;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:.7rem}
+#arrangement-save-dialog::backdrop {background:#0a0806b8}
+#arrangement-filename {display:block;width:100%;margin:.5rem 0;padding:.6rem;font:inherit;color:var(--text);background:#16140f;border:1px solid var(--border);border-radius:.3rem}

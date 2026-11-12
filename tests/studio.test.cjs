@@ -162,3 +162,13 @@ test('whole-song playback schedules the bass across differently sized parts',asy
   for(let i=0;i<500&&a.run('Boolean(playback)');i++){visited.add(a.run('playback.songIndex'));a.run('sound.context.currentTime+=.1;schedule()');}
   assert.deepEqual([...visited],[0,1]);assert.ok(a.run('!playback'));assert.match(a.get('song-status').textContent,/vollständig/);
 });
+test('arrangement saving asks for a name, can be cancelled and retains complete JSON',async()=>{
+  const a=app();a.fire('toggle-bass');const notes=a.run('JSON.stringify(selected)');
+  a.fire('save-arrangement');assert.equal(a.get('arrangement-save-dialog').open,true);assert.equal(a.downloads.length,0);
+  a.get('arrangement-filename').value='Meine Bridge';a.fire('arrangement-save-cancel');assert.equal(a.downloads.length,0);assert.equal(a.run('JSON.stringify(selected)'),notes);
+  a.fire('save-arrangement');a.get('arrangement-filename').value='Mein Stoner Song.json';a.fire('arrangement-save-form','submit');
+  assert.equal(a.downloads[0].name,'Mein Stoner Song.json');assert.equal(a.get('arrangement-save-dialog').open,false);
+  a.context.file=await a.downloads[0].blob.text();const project=a.run('readArrangement(file)');assert.ok(project.parts[0].pattern.bass);assert.equal(project.parts.length,1);
+  a.fire('save-arrangement');assert.equal(a.get('arrangement-filename').value,'Mein Stoner Song');a.fire('arrangement-save-cancel');
+  a.get('arrangement-import-dialog').showModal();a.fire('arrangement-save-current');assert.equal(a.get('arrangement-save-dialog').open,true);a.fire('arrangement-save-cancel');assert.equal(a.get('arrangement-import-dialog').open,true);
+});
