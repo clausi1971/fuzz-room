@@ -275,3 +275,12 @@ span.tone-blues-seven,.tone-blues-seven > .drum-label {color:#9bbfe5;font-weight
 .editor-actions .midi-export {margin-left:auto}
 .editor-actions .track-ai {color:var(--track-color);border-color:color-mix(in srgb,var(--track-color) 55%,var(--border));background:color-mix(in srgb,var(--track-color) 11%,var(--panel))}
 .editor-actions .track-ai:hover:not(:disabled) {background:color-mix(in srgb,var(--track-color) 21%,var(--panel));border-color:var(--track-color)}
+
+.tab-switcher {display:flex;gap:.65rem;flex-wrap:wrap;margin:.5rem 0 1rem}
+.tab-switcher [data-track="riff"] {--tab-color:var(--open)}
+.tab-switcher [data-track="melody"] {--tab-color:var(--single)}
+.tab-switcher [data-track="bass"] {--tab-color:var(--bass)}
+.tab-switcher button {min-width:8rem;min-height:3.2rem;padding:.65rem 1.1rem;font-size:1.08rem;font-weight:700;color:var(--tab-color);border:2px solid color-mix(in srgb,var(--tab-color) 65%,var(--border));background:color-mix(in srgb,var(--tab-color) 10%,var(--panel))}
+.tab-switcher button[aria-pressed="true"] {color:var(--panel);background:var(--tab-color);border-color:var(--tab-color);box-shadow:0 0 0 3px color-mix(in srgb,var(--tab-color) 20%,transparent)}
+.tab-switcher button:disabled {opacity:.55}
+.ai-tools .bass-ai-button {color:var(--bass);border-color:color-mix(in srgb,var(--bass) 55%,var(--border));background:color-mix(in srgb,var(--bass) 11%,var(--panel))}

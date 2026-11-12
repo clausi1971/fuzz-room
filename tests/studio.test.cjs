@@ -187,3 +187,14 @@ test('editor actions reuse track changes, ChatGPT, locks, history and MIDI dialo
   assert.equal(a.get('editor-action-new-guitar').disabled,true);assert.equal(a.get('editor-action-track-ai-guitar').disabled,true);
   a.fire('editor-action-toggle-lead');assert.ok(a.run('selected.lead'));assert.equal(a.get('editor-action-export-lead').disabled,false);
 });
+
+test('tab selector follows available tracks, bass frets and live edits',()=>{
+  const a=app();assert.equal(a.get('tab-riff').disabled,false);assert.equal(a.get('tab-melody').disabled,true);assert.equal(a.get('tab-bass').disabled,true);
+  a.fire('header-ai-bass');assert.equal(a.get('ai-description').value,'');assert.equal(a.get('ai-bass-fields').hidden,false);
+  a.fire('toggle-bass');a.fire('tab-bass');assert.equal(a.run('tabTrack'),'bass');assert.equal(a.get('riff-tabs-panel').hidden,true);assert.equal(a.get('bass-tabs-panel').hidden,false);
+  a.run("commitBass([[{step:0,root:26,length:4,articulation:'single'}],[],[],[]])");
+  const lines=a.get('bass-tabs').textContent.split('\n').slice(1);assert.equal(lines.length,4);assert.match(lines[3],/^D\|0--/);assert.match(lines[0],/^G\|/);
+  a.fire('toggle-lead');a.fire('tab-melody');assert.equal(a.get('lead-tabs-panel').hidden,false);assert.equal(a.get('bass-tabs-panel').hidden,true);
+  a.fire('toggle-lead');assert.equal(a.run('tabTrack'),'riff');assert.equal(a.get('tab-melody').disabled,true);
+  a.choose('mode','melody');assert.equal(a.run('tabTrack'),'melody');assert.equal(a.get('tab-riff').disabled,true);assert.equal(a.get('lead-tabs-panel').hidden,false);
+});

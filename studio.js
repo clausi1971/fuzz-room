@@ -17,6 +17,7 @@ let editedBar = -1;
 let riffBar = -1;
 let melodyBar = -1;
 let bassBar = -1;
+let tabTrack = 'riff';
 let bassName = 'Optional';
 let bassStyle = 'riff';
 let melodyEdited = false;
@@ -290,8 +291,14 @@ function renderTimeline(pattern) {
   }));
 }
 
-function renderTabs(id, guitar) {
-  const names = ['D', 'A', 'D', 'G', 'H', 'E'];
+function renderTabs(id, guitar, bass = false) {
+  const names = bass ? ['D', 'A', 'D', 'G'] : ['D', 'A', 'D', 'G', 'H', 'E'];
+  const frets = note => {
+    if (!bass) return guitarFrets(note);
+    const tuning = [26, 33, 38, 43];
+    const string = tuning.findLastIndex(pitch => pitch <= note.root);
+    return string < 0 ? [] : [[string, note.root - tuning[string]]];
+  };
   const strings = names.map(name => [`${name}|`]);
   const markers = ['  '];
   const mark = {mute: 'PM ', open: 'O  ', single: '♪  '};
@@ -306,7 +313,7 @@ function renderTabs(id, guitar) {
       const color = `stroke-${note.articulation}`;
       const playing = (techniques[note.transition] ?? '') + (note.expression === 'bend' ? bendSymbol(note) : techniques[note.expression] ?? '');
       technique[note.step] = element('span', color, playing ? playing.padEnd(3) : mark[note.articulation]);
-      for (const [string, fret] of guitarFrets(note)) bar[string][note.step] = element('span', color, String(fret).padEnd(3, '-'));
+      for (const [string, fret] of frets(note)) bar[string][note.step] = element('span', color, String(fret).padEnd(3, '-'));
     }
     markers.push(...technique, ' ');
     bar.forEach((steps, string) => strings[string].push(...steps, '|'));
@@ -571,7 +578,7 @@ function renderControls() {
   get('toggle-lead').textContent = selected.lead ? 'Melodie entfernen' : 'Passende Melodie hinzufügen';
   get('toggle-lead').hidden = solo;
   get('toggle-lead').setAttribute('aria-pressed', Boolean(selected.lead));
-  for (const id of ['new-lead', 'lead-tabs-panel']) get(id).hidden = !selected.lead;
+  for (const id of ['new-lead']) get(id).hidden = !selected.lead;
   get('export-lead').disabled = !selected.lead;
   get('mute-lead-label').hidden = !hasMelody;
   get('lead-volume').disabled = !hasMelody;
@@ -590,6 +597,7 @@ function renderControls() {
     button.disabled = guitarLocked;
     button.setAttribute('aria-pressed', Number(button.dataset.preset) === preset);
   });
+  renderTabView();
   renderTrackActions();
   renderEditorTransport();
 }
@@ -1762,3 +1770,30 @@ function renderTrackActions() {
 }
 for (const id of trackActionIds()) get('editor-action-' + id).addEventListener('click', () => get(id).click());
 renderTrackActions();
+
+function renderTabView() {
+  const tracks = {riff: selected.mode === 'riff' ? selected.guitar : null, melody: melodySource(), bass: selected.bass};
+  const labels = {riff:'Riff', melody:'Melodie', bass:'Bass'};
+  if (!tracks[tabTrack]) tabTrack = tracks.riff ? 'riff' : tracks.melody ? 'melody' : 'bass';
+  for (const [track, bars] of Object.entries(tracks)) {
+    const button = get('tab-' + track);
+    button.disabled = !bars;
+    button.textContent = labels[track] + (bars ? '' : ' · Noch keine Spur');
+    button.setAttribute('aria-pressed', track === tabTrack);
+  }
+  get('riff-tabs-panel').hidden = tabTrack !== 'riff';
+  get('lead-tabs-panel').hidden = tabTrack !== 'melody';
+  get('bass-tabs-panel').hidden = tabTrack !== 'bass';
+  get('tab-title').textContent = labels[tabTrack] + '-Tabs';
+  get('tab-tuning').textContent = tabTrack === 'bass' ? 'Bass · Drop D · D–A–D–G' : 'Drop D · D–A–D–G–H–E';
+  get('lead-techniques').hidden = tabTrack !== 'melody';
+  if (tracks.riff) renderTabs('tabs', tracks.riff);
+  if (tracks.melody) renderTabs('lead-tabs', tracks.melody);
+  if (tracks.bass) renderTabs('bass-tabs', tracks.bass, true);
+}
+for (const track of ['riff','melody','bass']) get('tab-' + track).addEventListener('click', () => {
+  if (get('tab-' + track).disabled) return;
+  tabTrack = track;
+  renderTabView();
+});
+get('header-ai-bass').addEventListener('click', () => get('open-ai-bass').click());
