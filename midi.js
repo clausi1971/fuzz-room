@@ -46,16 +46,21 @@ function encodeMidi(pattern, only) {
       }
     }
     const independent = bars.some(notes=>notes.some(note=>Object.keys(note.voiceTechniques??{}).length));
-    if(independent) for(let ch=3;ch<=8;ch++) {
+    const techniqueChannels=[3,4,5,6,7,8,10,11,12,13,14,15];
+    const channelEnds=Object.fromEntries(techniqueChannels.map(ch=>[ch,0]));
+    if(independent) for(const ch of techniqueChannels) {
       events.push({tick:0,order:0,bytes:[0xc0+ch,patch]});
       for(const [cc,value] of [[101,0],[100,0],[6,slideRange],[38,0],[101,127],[100,127]]) events.push({tick:0,order:0,bytes:[0xb0+ch,cc,value]});
     }
     bars.forEach((notes, bar) => {
-      for (const voice of riffAttacks(notes.filter(note => note.articulation !== 'single'))) {
+      for (const voice of riffAttacks(notes.filter(note => note.articulation !== 'single')).sort((a,b)=>a.step-b.step||a.index-b.index)) {
         const {step,pitch,length,index,note}=voice;
         const start = (bar * stepsPerBar + step) * ticksPerStep;
-        const ch=independent?3+guitarFrets(note)[index][0]:channel;
         const performed=riffVoiceNote(voice), end=start+Math.round(length*ticksPerStep);
+        const hasTechnique=Boolean(note.voiceTechniques?.[pitch]);
+        const ch=hasTechnique?techniqueChannels.find(ch=>channelEnds[ch]<=start):channel;
+        if(ch===undefined) throw new Error('Zu viele gleichzeitige Riff-Spieltechniken für den MIDI-Export.');
+        if(hasTechnique) channelEnds[ch]=end;
         addNote(events,ch,pitch,(performed.transition?76:step===0?107:92)-index*10,start,end);
         if(performed.transition) {
           events.push({tick:start,order:1.5,bytes:[0xb0+ch,68,127]},{tick:end,order:1,bytes:[0xb0+ch,68,0]});

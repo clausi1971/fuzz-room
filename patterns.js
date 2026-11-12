@@ -190,7 +190,7 @@ function riffVoiceSpans(note, pitch) {
 
 function riffAttacks(notes) {
   return notes.flatMap(note => guitarPitches(note).flatMap((pitch, index) => riffVoiceSpans(note, pitch).map(([offset, length]) => ({
-    note, pitch, index, offset, step: note.step + offset, length,
+    note, pitch, index, offset, step: note.step + offset, length, articulation: riffVoiceArticulation(note,pitch),
   }))));
 }
 
@@ -199,8 +199,8 @@ function editRiffSpan(bars, bar, step, pitch, offset, {end, cut, remove = false}
   const spans = riffVoiceSpans(note, pitch);
   const index = spans.findIndex(([start]) => start === offset);
   const [start, length] = spans[index];
-  const boundary = bars[bar].find(other => other.step > step)?.step ?? stepsPerBar;
-  const limit = Math.min(boundary - step, spans[index + 1]?.[0] ?? stepsPerBar);
+  const boundary = riffAttacks(bars[bar]).filter(voice => voice.pitch===pitch && voice.step>step+start).reduce((end,voice)=>Math.min(end,voice.step),stepsPerBar);
+  const limit = Math.min(boundary - step, spans[index + 1]?.[0] ?? stepsPerBar-step);
   const pieces = remove ? [] : cut === undefined
     ? [[start, Math.min(limit - start, Math.max(1, end - step - start))]]
     : cutNoteStep(start, length, cut - step);
@@ -208,7 +208,7 @@ function editRiffSpan(bars, bar, step, pitch, offset, {end, cut, remove = false}
   if (!updated.length) return editRiffPitch(bars, bar, step, pitch, note.articulation);
   const result = bars.slice();
   result[bar] = bars[bar].map(other => other === note ? {...note, voicing: guitarFrets(note), voiceEdits: {...note.voiceEdits, [pitch]: updated}} : other);
-  return result;
+  return normalizeRiffVoices(result);
 }
 
 function findRiffVoicing(pitches, previous, constraint = null) {
@@ -249,25 +249,10 @@ function editRiffPitch(bars, bar, step, pitch, articulation) {
     const next = notes.find(note => note.step > step);
     const length = hit?.length ?? Math.min((next?.step ?? stepsPerBar) - step, articulation === 'mute' ? 1.6 : 4);
     const voiceEdits = Object.fromEntries(Object.entries(hit?.voiceEdits ?? {}).filter(([key]) => Number(key) !== pitch));
-    notes.push({...hit, step, root: updated[0], length, articulation: hit?.articulation ?? articulation, voicing, voiceEdits, voiceTechniques: Object.fromEntries(Object.entries(hit?.voiceTechniques ?? {}).filter(([key]) => Number(key) !== pitch && updated.includes(Number(key))))});
-    if (!hit) {
-      const previous = bars[bar].findLast(note => note.step < step);
-      if (previous) {
-        const limit = step - previous.step;
-        const clipped = Object.fromEntries(guitarPitches(previous).map(pitch => [pitch, riffVoiceSpans(previous, pitch)
-          .filter(([start]) => start < limit).map(([start, length]) => [start, Math.min(length, limit - start)])]));
-        if (riffAttacks([previous]).some(voice => voice.step + voice.length > step)) {
-          const voicing = guitarFrets(previous).filter(([string, fret]) => clipped[tunings[string] + fret].length);
-          const previousIndex = notes.indexOf(previous);
-          if (voicing.length) {
-            notes[previousIndex] = {...previous, root: tunings[voicing[0][0]] + voicing[0][1], voicing, length: Math.min(previous.length, limit), voiceEdits: clipped};
-          } else notes.splice(previousIndex, 1);
-        }
-      }
-    }
+    notes.push({...hit, step, root: updated[0], length, articulation: hit?.articulation ?? articulation, voicing, voiceEdits, voiceArticulations: {...Object.fromEntries(Object.entries(hit?.voiceArticulations??{}).filter(([key])=>updated.includes(Number(key)))),...(pitches.includes(pitch)?{}:{[pitch]:articulation})}, voiceTechniques: Object.fromEntries(Object.entries(hit?.voiceTechniques ?? {}).filter(([key]) => Number(key) !== pitch && updated.includes(Number(key))))});
   }
   result[bar] = notes.sort((a, b) => a.step - b.step);
-  return result;
+  return normalizeRiffVoices(result);
 }
 
 function generatePolyRiff(config) {
@@ -528,5 +513,54 @@ function decorateRiff(bars,config) {
     const type=interval>0&&interval<=4?'hammer':interval<0&&interval>=-4?'pull':Math.random()<.6?'bend-half':'bend-whole';
     result=setRiffTechnique(result,bar,note.step,pitch,type)??result;
   }
-  return result;
+  return sustainRiff(result,config);
+}
+
+function riffVoiceArticulation(note,pitch) {
+  return note.voiceArticulations?.[pitch] ?? note.articulation;
+}
+function setRiffVoiceArticulation(bars,bar,step,pitch,articulation) {
+  const note=bars[bar]?.find(note=>note.step===step);
+  if(!note||!guitarPitches(note).includes(pitch)||!['open','mute'].includes(articulation)) return null;
+  return bars.map((notes,b)=>b===bar?notes.map(other=>other===note?{...note,voiceArticulations:{...note.voiceArticulations,[pitch]:articulation}}:other):notes);
+}
+function normalizeRiffVoices(bars) {
+  const result=bars.map(notes=>{
+    const voices=riffAttacks(notes);
+    const updated=notes.map(note=>{
+      let changed=false;
+      const voiceEdits={...note.voiceEdits};
+      for(const pitch of guitarPitches(note)) {
+        const before=riffVoiceSpans(note,pitch);
+        const after=before.map(([offset,length])=>{
+          const start=note.step+offset;
+          const next=voices.filter(voice=>voice.pitch===pitch&&voice.step>start).reduce((end,voice)=>Math.min(end,voice.step),stepsPerBar);
+          return [offset,Math.min(length,next-start)];
+        }).filter(([,length])=>length>0);
+        if(JSON.stringify(before)!==JSON.stringify(after)) {changed=true;voiceEdits[pitch]=after;}
+      }
+      const length=Math.min(note.length,stepsPerBar-note.step);
+      return changed||length!==note.length?{...note,length,...(changed?{voiceEdits}:{} )}:note;
+    });
+    return updated.some((note,i)=>note!==notes[i])?updated:notes;
+  });
+  return result.some((notes,i)=>notes!==bars[i])?result:bars;
+}
+function sustainRiff(bars,config) {
+  let result=structuredClone(bars);
+  const chance={stoner:.45,hard:.2,punk:.04}[config.style]??.2;
+  for(const [bar,notes] of result.entries()) for(let i=0;i<notes.length-1;i++) {
+    if(Math.random()>=chance) continue;
+    const note=notes[i],next=notes[i+1];
+    const pitch=guitarPitches(note).findLast(pitch=>!guitarPitches(next).includes(pitch));
+    if(pitch===undefined) continue;
+    note.voiceEdits={...note.voiceEdits,[pitch]:[[0,Math.min(stepsPerBar-note.step,next.step-note.step+(config.style==='stoner'?5:config.style==='hard'?3:1))]]};
+    note.voiceArticulations={...note.voiceArticulations,[pitch]:'open'};
+    const answer=guitarFrets(next).find(([string,fret])=>tunings[string]+fret!==pitch);
+    if(answer) {
+      const root=tunings[answer[0]]+answer[1];next.voicing=[answer];next.root=root;
+      for(const key of ['voiceEdits','voiceTechniques','voiceArticulations']) if(next[key])next[key]=Object.fromEntries(Object.entries(next[key]).filter(([pitch])=>Number(pitch)===root));
+    }
+  }
+  return sanitizeRiffTechniques(normalizeRiffVoices(result));
 }

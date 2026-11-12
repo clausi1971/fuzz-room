@@ -230,3 +230,39 @@ test('ChatGPT and app generation support sparse per-tone techniques and validate
  for(const part of ['riff','arrangement','section'])assert.match(a.run(`chatTrackPrompt(chatTrackContext('${part}'),'')`),/techniques/);
  const count=a.run(`(()=>{let seed=41;const old=Math.random;Math.random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);let n=0;try{for(const style of ['stoner','hard','punk'])for(let i=0;i<15;i++){const c={...config,style,key:i%12,scale:['minor','phrygian','blues'][i%3]},bars=i%2?generateGuitar(c):generatePolyRiff(c);projectNotes(bars,4,false);n+=bars.flat().filter(note=>Object.keys(note.voiceTechniques??{}).length).length;}return n;}finally{Math.random=old;}})()`);assert.ok(count>0);
 });
+
+test('a new G2 leaves the held D3 unchanged and each voice has its own articulation',()=>{
+ const a=app();a.run(`commitRiff([[{step:0,root:50,length:8,articulation:'open',voicing:[[2,0]]}],[],[],[]]);globalThis.held=selected.guitar[0][0];`);
+ const cell=a.get('riff-grid').querySelector('button[data-pitch="43"][data-bar="0"][data-step="1"]');a.get('riff-grid').handlers.click({target:cell});
+ assert.strictEqual(a.run('selected.guitar[0][0]'),a.run('held'));assert.equal(a.run('riffAttacks(selected.guitar[0]).find(v=>v.pitch===50).length'),8);
+ assert.equal(a.run('riffSelection.pitch'),43);assert.equal(a.run('riffAttacks(selected.guitar[0]).find(v=>v.pitch===43).articulation'),'open');assert.equal(a.run('selected.guitar[0][1].voiceTechniques[43]'),undefined);
+ a.fire('riff-tone-mute');assert.equal(a.run('riffAttacks(selected.guitar[0]).find(v=>v.pitch===43).articulation'),'mute');assert.equal(a.run('riffAttacks(selected.guitar[0]).find(v=>v.pitch===50).articulation'),'open');
+ assert.match(a.get('riff-grid').querySelector('button[data-pitch="50"][data-step="2"][data-bar="0"]').attrs['aria-label'],/klingt weiter/);
+ a.fire('riff-undo');assert.equal(a.run('riffAttacks(selected.guitar[0]).find(v=>v.pitch===43).articulation'),'open');a.fire('riff-redo');
+ a.run("commitRiff(editRiffSpan(selected.guitar,0,1,43,0,{end:12}))");assert.equal(a.run('riffAttacks(selected.guitar[0]).find(v=>v.pitch===43).length'),11);
+ a.run("commitRiff(editRiffPitch(selected.guitar,0,10,43,'open'))");assert.equal(a.run('riffAttacks(selected.guitar[0]).find(v=>v.pitch===43&&v.step===1).length'),9);assert.equal(a.run('riffAttacks(selected.guitar[0]).find(v=>v.pitch===50).length'),8);
+ assert.deepEqual(a.plain(a.run('readArrangement(createArrangement()).parts[0].pattern.guitar')),a.plain(a.run('selected.guitar')));
+ const events=midiTracks(a.run('encodeMidi(selected,"guitar")'))[0];assert.ok(events.some(e=>e.status===128&&e.body[0]===50&&e.tick===8*120));assert.ok(events.some(e=>e.status===144&&e.body[0]===43&&e.tick===120));
+});
+
+test('ChatGPT imports independent tone lengths and play styles without cutting other pitches',()=>{
+ const a=app();a.context.answer={notes:[{step:0,pitches:[50,57],duration:8,durations:[8,2],articulation:'open',articulations:['open','mute']},{step:1,pitches:[43],duration:2,articulation:'open'}]};
+ a.run('globalThis.imported=readChatRiff(answer,chatTrackContext("riff"))');
+ const voices=a.plain(a.run('riffAttacks(imported[0]).map(v=>[v.pitch,v.step,v.length,v.articulation])'));assert.deepEqual(voices,[[50,0,8,'open'],[57,0,2,'mute'],[43,1,2,'open']]);
+ a.context.answer.notes[0].durations=[17,2];assert.throws(()=>a.run('readChatRiff(answer,chatTrackContext("riff"))'));
+ for(const part of ['riff','arrangement','section']) {const prompt=a.run(`chatTrackPrompt(chatTrackContext('${part}'),'')`);assert.match(prompt,/andere|Andere/);assert.match(prompt,/durations/);assert.match(prompt,/articulations/);}
+});
+
+test('a held normal note is not affected by a later bend even when both use the same string',()=>{
+ const a=app();a.run(`commitRiff([[{step:0,root:40,length:8,articulation:'open',voicing:[[0,2]]},{step:2,root:43,length:4,articulation:'open',voicing:[[0,5]],voiceTechniques:{43:{type:'bend-half'}}}],[],[],[]]);`);
+ const events=midiTracks(a.run('encodeMidi(selected,"guitar")'))[0],low=events.find(e=>(e.status&240)===144&&e.body[0]===40),high=events.find(e=>(e.status&240)===144&&e.body[0]===43);
+ assert.notEqual(low.status&15,high.status&15);assert.ok(events.filter(e=>(e.status&240)===224).every(e=>(e.status&15)===(high.status&15)));
+ assert.ok(events.some(e=>(e.status&240)===128&&e.body[0]===40&&e.tick===8*120));
+});
+
+test('generated overlapping riffs stay sparse, style-dependent and valid for saved projects',()=>{
+ const a=app();const counts=a.plain(a.run(`(()=>{let seed=143;const old=Math.random;Math.random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);const counts={};try{for(const style of ['stoner','hard','punk']){counts[style]=0;for(let i=0;i<40;i++){
+ const c={...config,style,key:i%12,scale:['minor','phrygian','blues'][i%3]},bars=i%2?generateGuitar(c):generatePolyRiff(c);projectNotes(bars,4,false);
+ for(const notes of bars){const voices=riffAttacks(notes);counts[style]+=voices.filter(v=>voices.some(w=>w.pitch!==v.pitch&&w.step>v.step&&w.step<v.step+v.length)).length;if(voices.some(v=>voices.some(w=>v.pitch===w.pitch&&w.step>v.step&&w.step<v.step+v.length)))throw Error('Repeated pitches overlap');}
+ }}return counts;}finally{Math.random=old;}})()`));assert.ok(counts.stoner>counts.hard);assert.ok(counts.hard>counts.punk);
+});

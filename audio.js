@@ -127,7 +127,7 @@ class LoopSound {
       for (const voice of voices) {
         const {note, pitch, index, length, offset} = voice;
         const performed = riffVoiceNote(voice);
-        const muted = note.articulation === 'mute';
+        const muted = voice.articulation === 'mute';
         const buffer = this.string(pitch, muted, side);
         const start = onset + (offset ? 0 : index * .0035);
         const duration = length * stepDuration;
