@@ -172,3 +172,18 @@ test('arrangement saving asks for a name, can be cancelled and retains complete 
   a.fire('save-arrangement');assert.equal(a.get('arrangement-filename').value,'Mein Stoner Song');a.fire('arrangement-save-cancel');
   a.get('arrangement-import-dialog').showModal();a.fire('arrangement-save-current');assert.equal(a.get('arrangement-save-dialog').open,true);a.fire('arrangement-save-cancel');assert.equal(a.get('arrangement-import-dialog').open,true);
 });
+
+test('editor actions reuse track changes, ChatGPT, locks, history and MIDI dialogs',()=>{
+  const a=app();
+  for(const id of ['export-lead','export-bass']) {assert.equal(a.get(id).hidden,false);assert.equal(a.get(id).disabled,true);assert.equal(a.get('editor-action-'+id).disabled,true);}
+  const riff=a.run('selected.guitar');
+  a.fire('editor-action-toggle-bass');assert.ok(a.run('selected.bass'));assert.strictEqual(a.run('selected.guitar'),riff);
+  assert.equal(a.get('editor-action-export-bass').disabled,false);
+  a.fire('editor-action-export-bass');assert.equal(a.get('midi-export-dialog').open,true);a.fire('midi-export-cancel');
+  a.fire('editor-action-open-ai-bass');assert.equal(a.get('ai-bass-fields').hidden,false);
+  a.fire('editor-action-toggle-bass');assert.equal(a.run('selected.bass'),null);
+  a.fire('bass-undo');assert.ok(a.run('selected.bass'));assert.equal(a.get('editor-action-export-bass').disabled,false);
+  a.get('lock-guitar').checked=true;a.fire('lock-guitar','change');
+  assert.equal(a.get('editor-action-new-guitar').disabled,true);assert.equal(a.get('editor-action-track-ai-guitar').disabled,true);
+  a.fire('editor-action-toggle-lead');assert.ok(a.run('selected.lead'));assert.equal(a.get('editor-action-export-lead').disabled,false);
+});

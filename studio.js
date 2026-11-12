@@ -555,7 +555,7 @@ function renderControls() {
   get('open-ai-bass').disabled = false;
   get('bass-name').textContent = selected.bass ? bassName : 'Optional';
   get('bass-volume').disabled = !selected.bass;
-  get('export-bass').hidden = !selected.bass;
+  get('export-bass').disabled = !selected.bass;
   get('toggle-bass').textContent = selected.bass ? 'Bass entfernen' : 'Passenden Bass hinzufügen';
   get('toggle-bass').setAttribute('aria-pressed', Boolean(selected.bass));
   get('track-ai-guitar').textContent = `${solo ? 'Melodie' : 'Riff'} mit ChatGPT`;
@@ -571,7 +571,8 @@ function renderControls() {
   get('toggle-lead').textContent = selected.lead ? 'Melodie entfernen' : 'Passende Melodie hinzufügen';
   get('toggle-lead').hidden = solo;
   get('toggle-lead').setAttribute('aria-pressed', Boolean(selected.lead));
-  for (const id of ['new-lead', 'export-lead', 'lead-tabs-panel']) get(id).hidden = !selected.lead;
+  for (const id of ['new-lead', 'lead-tabs-panel']) get(id).hidden = !selected.lead;
+  get('export-lead').disabled = !selected.lead;
   get('mute-lead-label').hidden = !hasMelody;
   get('lead-volume').disabled = !hasMelody;
   get('melody-style').disabled = solo && guitarLocked;
@@ -589,6 +590,7 @@ function renderControls() {
     button.disabled = guitarLocked;
     button.setAttribute('aria-pressed', Number(button.dataset.preset) === preset);
   });
+  renderTrackActions();
   renderEditorTransport();
 }
 
@@ -1744,3 +1746,19 @@ bindNoteGrid({id:'bass-grid',source:()=>selected.bass,render:renderBassGrid,comm
   resize:(bars,{bar,step,pitch},current,end)=>editMelodyNote(bars,bar,step,pitch,{length:Math.max(1,(current-bar)*16+end-step),resize:true}),
   cut:(bars,{bar,step,origin},current)=>cutMelodyStep(bars,bar,step,current*16+origin)});
 get('ai-bass-style').addEventListener('change',()=>{get('ai-response').value='';get('ai-prompt-preview').hidden=true;get('ai-dialog-status').textContent='Bass-Verhalten geändert. Kopiere eine neue Anfrage.';});
+
+// Both action bars use the existing handlers and the same availability rules.
+function trackActionIds() {
+  return ['new-guitar','poly-riff','variation','track-ai-guitar','export-guitar','toggle-lead','new-lead','track-ai-melody','export-lead','toggle-bass','new-bass','open-ai-bass','export-bass','change-drums','new-drums','track-ai-drums','export-drums'];
+}
+function renderTrackActions() {
+  for (const id of trackActionIds()) {
+    const source = get(id), button = get('editor-action-' + id);
+    button.textContent = source.textContent;
+    button.disabled = source.disabled;
+    button.hidden = source.hidden;
+    if (source.hasAttribute?.('aria-pressed')) button.setAttribute('aria-pressed', source.getAttribute('aria-pressed'));
+  }
+}
+for (const id of trackActionIds()) get('editor-action-' + id).addEventListener('click', () => get(id).click());
+renderTrackActions();
