@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Gitarrenriffs, Melodien und Drumgrooves erstellen, bearbeiten und als MIDI exportieren.">
   <title>Fuzz Room – Gitarren- und Drumstudio</title>
-  <link rel="stylesheet" href="style.css?v=35">
-  <script src="audio.js?v=35" defer></script>
-  <script src="patterns.js?v=35" defer></script>
-  <script src="midi.js?v=35" defer></script>
-  <script src="studio.js?v=35" defer></script>
-  <script src="arrangement.js?v=35" defer></script>
+  <link rel="stylesheet" href="style.css?v=36">
+  <script src="audio.js?v=36" defer></script>
+  <script src="patterns.js?v=36" defer></script>
+  <script src="midi.js?v=36" defer></script>
+  <script src="studio.js?v=36" defer></script>
+  <script src="arrangement.js?v=36" defer></script>
 </head>
 <body>
   <main>
@@ -27,6 +27,7 @@
         <label>Gitarrenspur <select id="mode"><option value="riff">Riff</option><option value="melody">Melodie</option></select></label>
         <label>Melodiestil <select id="melody-style"><option value="desert">Wüstenrock (Kyuss)</option><option value="psych">Psych Stoner (Stoned Jesus)</option><option value="stoner">Stoner Rock</option><option value="blues">Blues</option></select></label>
       </div>
+      <fieldset class="riff-generation"><legend id="riff-generation-title">Riff-Spielweisen beim Komponieren · Stoner Rock</legend><div class="riff-generation-choices"><label><input id="riff-generate-open" type="checkbox" checked> Offen</label><label><input id="riff-generate-pm" type="checkbox" checked> Palm Mute</label><label><input id="riff-generate-sustain" type="checkbox" checked> Ausklingende Begleittöne</label><label><input id="riff-generate-hammer" type="checkbox" checked> Hammer-on</label><label><input id="riff-generate-pull" type="checkbox" checked> Pull-off</label><label><input id="riff-generate-bend" type="checkbox" checked> Bendings</label></div><p>Eigene Auswahl je Musikstil. Gilt für neue Riffs aus der App und mit ChatGPT. Die Häufigkeit passt sich automatisch dem Stil an. Ausklingende Begleittöne benötigen Offen.</p><p id="riff-generation-status" role="status"></p></fieldset>
       <div class="ai-tools" role="group" aria-label="Spuren mit ChatGPT"><button id="open-ai-riff" type="button">Riff mit ChatGPT</button><button id="header-ai-bass" class="bass-ai-button" type="button">Bass mit ChatGPT</button><button id="open-ai-drums" type="button">Drums mit ChatGPT</button><div class="ai-arrangement-pair"><button id="open-ai-melody" type="button">Melodie mit ChatGPT</button><button id="open-ai-arrangement" class="arrangement-button" type="button">Arrangement mit ChatGPT</button></div><span id="ai-status" role="status"></span></div>
       <section id="ai-comparison" class="ai-comparison" aria-label="Versionen vergleichen" hidden>
         <strong id="ai-comparison-title">Versionen vergleichen</strong>

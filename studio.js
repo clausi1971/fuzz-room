@@ -558,6 +558,7 @@ function commitRiff(guitar, {fromChat = false} = {}) {
 }
 
 function renderControls() {
+  renderRiffGenerationOptions();
   const guitarLocked = get('lock-guitar').checked;
   const drumsLocked = get('lock-drums').checked;
   for (const id of ['key', 'scale', 'mode', 'new-guitar', 'poly-riff', 'variation']) get(id).disabled = guitarLocked;
@@ -706,6 +707,7 @@ function chatTrackContext(part) {
     riff: ['drums', 'melody', 'section', 'bass'].includes(part) && selected.mode === 'riff' ? selected.guitar : null,
     drums: ['riff', 'melody', 'section', 'bass'].includes(part) ? selected.drums : null,
     musicStyle: config.style,
+    riffTechniques: riffTechniqueProfiles[config.style],
     melody: ['riff', 'drums', 'section', 'bass'].includes(part) ? (selected.mode === 'melody' ? selected.guitar : selected.lead) : null};
 }
 
@@ -728,6 +730,12 @@ function chatTrackPrompt(context, description) {
     .replaceAll('Schritt 64', `Schritt ${steps}`);
   if (['arrangement', 'section'].includes(context.part) && context.hasBass) prompt += `\nKomponiere zusätzlich die Bassspur im selben JSON als "bass":{"notes":[{"step":0,"pitch":${bassPitches(context)[0]},"duration":4}]}. Erlaubte MIDI-Töne: ${bassPitches(context).join(', ')}. Einstimmig, 1 bis ${steps} Noten, ganzzahlige Einsätze 0 bis ${steps-1}, positive ganzzahlige Dauern, Ende spätestens bei Schritt ${steps}. Stimme den Bass auf Riff, Drums, Melodie und Musikstil ab.`;
   if (['riff','arrangement','section'].includes(context.part)) prompt += '\nRiff-Spieltechniken dezent passend zum Musikstil einsetzen, bei Stoner Rock etwas häufiger: optional techniques je Riffanschlag als Liste, z.B. [{"pitch":64,"type":"bend-half"}]. Erlaubte Typen hammer, pull, bend-half, bend-whole. Jeder Eintrag betrifft nur diesen Ton aus pitches, alle anderen Töne bleiben normal. Halbton- und Ganzton-Bendings ziehen gleichmäßig hoch und zurück. Keine Bendings auf Leersaiten. Hammer-on/Pull-off nur zum nächsten Ton auf derselben Saite, Abstand 1–4 Halbtöne, Hammer aufwärts, Pull abwärts. Eine tiefe Leersaite darf dabei normal angeschlagen werden. Stilabhängig dezent: Bei Stoner Rock häufiger eine offene Begleitnote ausklingen lassen und darüber oder darunter einzelne Antworttöne spielen; bei Hard Rock gezielt, bei Punk selten. Andere Tonhöhen dabei nicht kürzen, längstens bis zum Taktende.';
+  if (['riff','arrangement','section'].includes(context.part)) {
+    const options=riffGenerationOptions(context);
+    const allowed=Object.entries(riffGenerationLabels).filter(([key])=>options[key]).map(([,name])=>name).join(', ');
+    const excluded=Object.entries(riffGenerationLabels).filter(([key])=>!options[key]).map(([,name])=>name).join(', ');
+    prompt += '\nVERBINDLICHE RIFF-AUSWAHL für diesen Musikstil: Erlaubt: '+allowed+'. Ausgeschlossen: '+(excluded||'keine')+'. Verwende ausschließlich erlaubte Spielweisen und Techniken. Diese Auswahl gilt für das neu komponierte Riff, nicht für die Begleitspuren. Häufigkeit automatisch und sparsam an den Stil anpassen: Stoner Rock bevorzugt offene, ausklingende Stimmen und Bendings, Hard Rock abwechslungsreiche Hammer-ons/Pull-offs und gezielte Bendings, Punk überwiegend kurze direkte Anschläge und wenig Verzierungen – jeweils nur soweit erlaubt. Bei ausgeschalteten ausklingenden Begleittönen endet jeder Riffton vor dem nächsten Anschlag. Ausgeschlossene Techniken auch dann nicht verwenden, wenn sie in einer Vorlage oder im JSON-Beispiel vorkommen.';
+  }
   if (context.part !== 'section') return prompt;
   prompt = prompt.replace('und am Ende zum Loop zurückführen.', 'und am Ende zum folgenden Songteil überleiten. Beim Outro darf der Schluss ausklingen.');
   const source = {
@@ -882,6 +890,15 @@ function readChatRiff(value, context) {
     const next=setRiffTechnique(decorated,bar,note.step,Number(pitch),technique.type);
     if(!next) throw new Error('Eine Riff-Spieltechnik passt nicht zur Saite oder zum vorherigen Ton.');
     decorated=next;
+  }
+  const allowed=riffGenerationOptions(context);
+  for(const notes of decorated) {
+    const voices=riffAttacks(notes);
+    for(const voice of voices) {
+      const type=voice.note.voiceTechniques?.[voice.pitch]?.type;
+      if(!allowed[voice.articulation==='mute'?'pm':'open'] || (type&&!allowed[type.startsWith('bend-')?'bend':type])) throw new Error('Das ChatGPT-Riff enthält eine Spielweise oder Technik, die für diesen Stil ausgeschaltet ist. Bitte ChatGPT um eine passende Korrektur.');
+      if(!allowed.sustain&&voices.some(other=>other.step>voice.step&&other.step<voice.step+voice.length)) throw new Error('Das ChatGPT-Riff enthält ausklingende Begleittöne, die für diesen Stil ausgeschaltet sind. Bitte ChatGPT um eine Korrektur.');
+    }
   }
   return decorated;
 }
@@ -1873,3 +1890,23 @@ function applyRiffArticulation(articulation) {
   commitRiff(setRiffVoiceArticulation(selected.guitar,bar,step,pitch,articulation));
 }
 for(const articulation of ['open','mute']) get('riff-tone-'+articulation).addEventListener('click',()=>applyRiffArticulation(articulation));
+
+function renderRiffGenerationOptions() {
+  const profile=riffTechniqueProfiles[config.style];
+  get('riff-generation-title').textContent='Riff-Spielweisen beim Komponieren · '+({stoner:'Stoner Rock',hard:'Hard Rock',punk:'Punk Rock'}[config.style]);
+  for(const key of Object.keys(riffGenerationLabels)) {
+    const input=get('riff-generate-'+key);
+    input.checked=Boolean(profile[key]);input.disabled=key==='sustain'&&!profile.open;
+  }
+}
+for(const key of Object.keys(riffGenerationLabels)) get('riff-generate-'+key).addEventListener('change',()=>{
+  const profile=riffTechniqueProfiles[config.style];
+  const next={...profile,[key]:get('riff-generate-'+key).checked};
+  if(!next.open&&!next.pm) {
+    renderRiffGenerationOptions();get('riff-generation-status').textContent='Mindestens Offen oder Palm Mute muss erlaubt sein.';return;
+  }
+  if(!next.open) next.sustain=false;
+  riffTechniqueProfiles[config.style]=next;
+  renderRiffGenerationOptions();
+  get('riff-generation-status').textContent='Auswahl für diesen Stil gespeichert. Gilt für neue Riffs und ChatGPT-Anfragen; vorhandene Töne bleiben erhalten.';
+});

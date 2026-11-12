@@ -172,7 +172,8 @@ function readArrangement(text) {
   const guides = Object.fromEntries(['riff', 'melody'].map(track => [track,
     Object.fromEntries(['snare', 'kick'].map(kind => [kind, Boolean(value.view?.guides?.[track]?.[kind])]))]));
   const articulation = projectChoice(value.view?.articulation ?? 'open', ['open', 'mute']);
-  return {parts, activeSection: value.activeSection, mixer: {levels, mutes: [...new Set(value.mixer.mutes)]}, view: {guides, articulation},
+  const riffProfiles=readRiffTechniqueProfiles(value.riffTechniqueProfiles);
+  return {riffTechniqueProfiles:riffProfiles,parts, activeSection: value.activeSection, mixer: {levels, mutes: [...new Set(value.mixer.mutes)]}, view: {guides, articulation},
     locks: {guitar: Boolean(value.locks?.guitar), drums: Boolean(value.locks?.drums)}};
 }
 
@@ -180,7 +181,7 @@ function createArrangement() {
   if (chatComparison) throw new Error('Übernimm oder verwerfe zuerst die ChatGPT-Vorschau.');
   saveSection();
   songParts.forEach(sectionHistory);
-  const value = {format: 'fuzz-room-arrangement', version: 2, parts: songParts, activeSection,
+  const value = {format: 'fuzz-room-arrangement', version: 2, parts: songParts, activeSection, riffTechniqueProfiles,
     mixer: {levels: Object.fromEntries(mixerChannels.map(channel => [channel, Number(get(channel).value)])), mutes: [...mixerMutes]},
     locks: {guitar: get('lock-guitar').checked, drums: get('lock-drums').checked},
     view: {guides: drumGuides, articulation: get('riff-articulation').value}};
@@ -231,6 +232,7 @@ function loadArrangement(project) {
   aiPromptContext = null;
   noteDrag = null;
   suppressGridClick = false;
+  riffTechniqueProfiles=structuredClone(project.riffTechniqueProfiles??defaultRiffTechniqueProfiles());
   songParts = project.parts;
   sectionSerial = Math.max(...songParts.map(part => part.id));
   for (const channel of mixerChannels) get(channel).value = project.mixer.levels[channel];
@@ -283,3 +285,16 @@ get('arrangement-import-confirm').addEventListener('click', () => {
   pendingArrangement = null;
   get('arrangement-import-dialog').close();
 });
+
+function readRiffTechniqueProfiles(value) {
+  if(value===undefined) return defaultRiffTechniqueProfiles();
+  projectCheck(value&&typeof value==='object'&&!Array.isArray(value));
+  return Object.fromEntries(['stoner','hard','punk'].map(style=>{
+    const profile=value[style];projectCheck(profile&&typeof profile==='object'&&!Array.isArray(profile));
+    const settings=Object.fromEntries(Object.keys(riffGenerationLabels).map(key=>{
+      projectCheck(typeof profile[key]==='boolean');return [key,profile[key]];
+    }));
+    projectCheck(settings.open||settings.pm);settings.sustain=Boolean(settings.sustain&&settings.open);
+    return [style,settings];
+  }));
+}

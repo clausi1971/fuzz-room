@@ -278,7 +278,8 @@ function generatePolyRiff(config) {
       .sort((a, b) => Math.abs(a.pitch - note.root - 7) - Math.abs(b.pitch - note.root - 7))[0];
     const voicing = [[rootString, rootFret], ...(middle ? [[middle.string, middle.fret]] : []), [top.string, top.fret]];
     const space = (notes[index + 1]?.step ?? stepsPerBar) - note.step;
-    const articulation = index % 3 === 1 ? note.articulation : 'open';
+    const options=riffGenerationOptions(config);
+    const articulation = !options.open ? 'mute' : !options.pm ? 'open' : index % 3 === 1 ? note.articulation : 'open';
     return {...note, articulation, voicing, length: articulation === 'open' ? Math.min(space - .18, 5.6) : note.length};
   })), config);
 }
@@ -297,7 +298,8 @@ function generateGuitar(config, take = 0, decorate = true) {
     return rhythm.map((step, index) => {
       const last = index === rhythm.length - 1;
       const tone = (degree + (index === 0 ? 0 : motif[index % motif.length])) % scale.length;
-      const articulation = (bar === 3 && last) || Math.random() > style.muted ? 'open' : 'mute';
+      const options=riffGenerationOptions(config);
+      const articulation = !options.open ? 'mute' : !options.pm ? 'open' : (bar === 3 && last) || Math.random() > style.muted ? 'open' : 'mute';
       const space = (rhythm[index + 1] ?? stepsPerBar) - step;
       const length = articulation === 'mute' ? Math.min(space - .18, 1.6) : Math.min(space - .18, 4.4);
       const fifthDegree = tone + 4;
@@ -505,13 +507,18 @@ function sanitizeRiffTechniques(bars) {
 }
 function decorateRiff(bars,config) {
   let result=bars;
+  const options=riffGenerationOptions(config);
   const chance={stoner:.22,hard:.14,punk:.045}[config.style]??.14;
+  const weights={stoner:{hammer:2,pull:1,'bend-half':3,'bend-whole':3},hard:{hammer:3,pull:3,'bend-half':2,'bend-whole':2},punk:{hammer:3,pull:2,'bend-half':1,'bend-whole':1}}[config.style];
   for(const [bar,notes] of bars.entries()) for(const note of notes) {
     if(Math.random()>chance) continue;
-    const pitch=guitarPitches(note).at(-1), previous=riffPreviousVoice(result,bar,note.step,pitch);
-    const interval=previous?pitch-previous.pitch:0;
-    const type=interval>0&&interval<=4?'hammer':interval<0&&interval>=-4?'pull':Math.random()<.6?'bend-half':'bend-whole';
-    result=setRiffTechnique(result,bar,note.step,pitch,type)??result;
+    const pitch=guitarPitches(note).at(-1);
+    const choices=['hammer','pull','bend-half','bend-whole'].filter(type=>options[type.startsWith('bend-')?'bend':type])
+      .map(type=>({type,bars:setRiffTechnique(result,bar,note.step,pitch,type),weight:weights?.[type]??1})).filter(choice=>choice.bars);
+    if(!choices.length) continue;
+    let target=Math.random()*choices.reduce((sum,choice)=>sum+choice.weight,0);
+    const choice=choices.find(choice=>(target-=choice.weight)<0)??choices.at(-1);
+    result=choice.bars;
   }
   return sustainRiff(result,config);
 }
@@ -547,6 +554,7 @@ function normalizeRiffVoices(bars) {
   return result.some((notes,i)=>notes!==bars[i])?result:bars;
 }
 function sustainRiff(bars,config) {
+  if(!riffGenerationOptions(config).sustain) return sanitizeRiffTechniques(normalizeRiffVoices(bars));
   let result=structuredClone(bars);
   const chance={stoner:.45,hard:.2,punk:.04}[config.style]??.2;
   for(const [bar,notes] of result.entries()) for(let i=0;i<notes.length-1;i++) {
@@ -563,4 +571,14 @@ function sustainRiff(bars,config) {
     }
   }
   return sanitizeRiffTechniques(normalizeRiffVoices(result));
+}
+
+const riffGenerationLabels={open:'Offen',pm:'Palm Mute',sustain:'Ausklingende Begleittöne',hammer:'Hammer-on',pull:'Pull-off',bend:'Bendings'};
+function defaultRiffTechniqueProfiles() {
+  return Object.fromEntries(['stoner','hard','punk'].map(style=>[style,{open:true,pm:true,sustain:true,hammer:true,pull:true,bend:true}]));
+}
+let riffTechniqueProfiles=defaultRiffTechniqueProfiles();
+function riffGenerationOptions(config) {
+  const profile=config.riffTechniques??riffTechniqueProfiles[config.musicStyle??config.style]??defaultRiffTechniqueProfiles().stoner;
+  return {...profile,sustain:Boolean(profile.sustain&&profile.open)};
 }

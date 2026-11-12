@@ -266,3 +266,37 @@ test('generated overlapping riffs stay sparse, style-dependent and valid for sav
  for(const notes of bars){const voices=riffAttacks(notes);counts[style]+=voices.filter(v=>voices.some(w=>w.pitch!==v.pitch&&w.step>v.step&&w.step<v.step+v.length)).length;if(voices.some(v=>voices.some(w=>v.pitch===w.pitch&&w.step>v.step&&w.step<v.step+v.length)))throw Error('Repeated pitches overlap');}
  }}return counts;}finally{Math.random=old;}})()`));assert.ok(counts.stoner>counts.hard);assert.ok(counts.hard>counts.punk);
 });
+
+test('riff technique choices are independent per style, preserve notes and roundtrip with arrangements',()=>{
+ const a=app(),guitar=a.run('selected.guitar');
+ for(const key of ['hammer','pull','bend','sustain']){a.get('riff-generate-'+key).checked=false;a.fire('riff-generate-'+key,'change');}
+ assert.strictEqual(a.run('selected.guitar'),guitar);assert.equal(a.run('riffTechniqueProfiles.stoner.bend'),false);
+ a.choose('style','hard');assert.equal(a.get('riff-generate-bend').checked,true);a.get('riff-generate-pm').checked=false;a.fire('riff-generate-pm','change');
+ a.choose('style','stoner');assert.equal(a.get('riff-generate-bend').checked,false);assert.equal(a.get('riff-generate-pm').checked,true);
+ a.get('riff-generate-open').checked=false;a.fire('riff-generate-open','change');assert.equal(a.get('riff-generate-sustain').disabled,true);
+ a.get('riff-generate-pm').checked=false;a.fire('riff-generate-pm','change');assert.equal(a.get('riff-generate-pm').checked,true);assert.match(a.get('riff-generation-status').textContent,/Mindestens/);
+ const saved=a.run('createArrangement()');a.context.saved=saved;a.run('riffTechniqueProfiles=defaultRiffTechniqueProfiles();loadArrangement(readArrangement(saved))');
+ assert.equal(a.run('riffTechniqueProfiles.stoner.open'),false);assert.equal(a.run('riffTechniqueProfiles.hard.pm'),false);assert.equal(a.get('riff-generate-bend').checked,false);
+ a.context.legacy=JSON.parse(saved);delete a.context.legacy.riffTechniqueProfiles;assert.equal(a.run('readArrangement(JSON.stringify(legacy)).riffTechniqueProfiles.stoner.bend'),true);
+});
+
+test('both riff generators honor selected articulations and techniques across all styles',()=>{
+ const a=app();a.run(`(()=>{let seed=82;const old=Math.random;Math.random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);try{
+ for(const style of ['stoner','hard','punk'])for(const articulation of ['open','pm'])for(let i=0;i<12;i++) {
+  const options={open:articulation==='open',pm:articulation==='pm',sustain:false,hammer:false,pull:false,bend:false};
+  const c={...config,style,key:i%12,scale:['minor','blues','phrygian'][i%3],riffTechniques:options};
+  const bars=i%2?generateGuitar(c):generatePolyRiff(c);projectNotes(bars,4,false);
+  for(const notes of bars){const voices=riffAttacks(notes);for(const v of voices){if(v.articulation!==(articulation==='pm'?'mute':'open'))throw Error('Excluded articulation');if(v.note.voiceTechniques?.[v.pitch])throw Error('Excluded technique');if(voices.some(w=>w.step>v.step&&w.step<v.step+v.length))throw Error('Excluded sustain');}}
+ }
+ }finally{Math.random=old;}})()`);
+});
+
+test('ChatGPT receives style choices, rejects excluded techniques and detects changed choices',()=>{
+ const a=app();for(const key of ['pm','sustain','hammer','pull','bend']){a.get('riff-generate-'+key).checked=false;a.fire('riff-generate-'+key,'change');}
+ for(const part of ['riff','arrangement','section'])assert.match(a.run(`chatTrackPrompt(chatTrackContext('${part}'),'')`),/Ausgeschlossen: Palm Mute, Ausklingende Begleittöne, Hammer-on, Pull-off, Bendings/);
+ a.context.answer={notes:[{step:0,pitches:[40],duration:2,articulation:'open'}]};assert.ok(a.run('readChatRiff(answer,chatTrackContext("riff"))'));
+ a.context.answer.notes[0].articulation='mute';assert.throws(()=>a.run('readChatRiff(answer,chatTrackContext("riff"))'),/ausgeschaltet/);
+ a.context.answer.notes[0].articulation='open';a.context.answer.notes[0].techniques=[{pitch:40,type:'bend-half'}];assert.throws(()=>a.run('readChatRiff(answer,chatTrackContext("riff"))'),/ausgeschaltet/);
+ delete a.context.answer.notes[0].techniques;a.context.answer.notes[0].duration=8;a.context.answer.notes.push({step:2,pitches:[43],duration:2,articulation:'open'});assert.throws(()=>a.run('readChatRiff(answer,chatTrackContext("riff"))'),/ausklingende/);
+ a.fire('open-ai-riff');a.run('aiPromptContext=chatTrackContext("riff")');a.get('riff-generate-bend').checked=true;a.fire('riff-generate-bend','change');a.get('ai-response').value=JSON.stringify({notes:[{step:0,pitches:[40],duration:2,articulation:'open'}]});a.fire('ai-melody-form','submit');assert.match(a.get('ai-dialog-status').textContent,/geändert/);assert.equal(a.run('chatComparison'),undefined);
+});

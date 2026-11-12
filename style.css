@@ -287,3 +287,11 @@ span.tone-blues-seven,.tone-blues-seven > .drum-label {color:#9bbfe5;font-weight
 
 .riff-cell.selected-riff-tone {outline:2px solid var(--text);outline-offset:-2px;box-shadow:inset 0 0 0 1px var(--panel)}
 #riff-tech-tools button[aria-pressed="true"] {background:var(--open);color:var(--panel);border-color:var(--open)}
+
+.riff-generation {margin:1rem 0;padding:.8rem 1rem;border:1px solid color-mix(in srgb,var(--open) 40%,var(--border));border-radius:.6rem;background:color-mix(in srgb,var(--open) 4%,var(--panel))}
+.riff-generation legend {font-weight:700;color:var(--open);padding:0 .4rem}
+.riff-generation-choices {display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}
+.riff-generation-choices label {display:flex;align-items:center;gap:.45rem;background:var(--panel);border:1px solid var(--border);border-radius:.4rem;padding:.55rem .7rem;cursor:pointer}
+.riff-generation-choices input {accent-color:var(--open);width:1.1rem;height:1.1rem}
+.riff-generation p {font-size:.83rem;color:var(--muted);margin:.65rem 0 0}
+.riff-generation #riff-generation-status:empty {display:none}
