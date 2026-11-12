@@ -198,3 +198,48 @@ test('tab selector follows available tracks, bass frets and live edits',()=>{
   a.fire('toggle-lead');assert.equal(a.run('tabTrack'),'riff');assert.equal(a.get('tab-melody').disabled,true);
   a.choose('mode','melody');assert.equal(a.run('tabTrack'),'melody');assert.equal(a.get('tab-riff').disabled,true);assert.equal(a.get('lead-tabs-panel').hidden,false);
 });
+
+test('riff voices ring across other attacks and bars; drag, cut, undo and MIDI retain independent spans',async()=>{
+  const a=app();
+  a.run(`commitRiff([[{step:0,root:40,length:2,articulation:'open',voicing:[[0,2]]},{step:4,root:43,length:2,articulation:'open',voicing:[[0,5]]}],[{step:8,root:40,length:2,articulation:'open',voicing:[[0,2]]}],[],[]]);
+    const grid=get('riff-grid'), cell=grid.querySelector('button[data-pitch="40"][data-bar="0"][data-step="0"]');
+    grid.handlers.pointerdown({target:cell,button:0,pointerId:1,clientX:101});
+    grid.handlers.pointermove({buttons:1,pointerId:1,clientX:100+19*20});
+    grid.handlers.pointerup({pointerId:1});`);
+  assert.equal(a.run('riffTimeline(selected.guitar).find(v=>v.pitch===40).length'),20);
+  assert.equal(a.run('riffTimeline(selected.guitar).find(v=>v.pitch===43).absoluteStep'),4);
+  const held=a.get('riff-grid').querySelector('button[data-pitch="40"][data-bar="1"][data-step="2"]');assert.equal(held.dataset.noteBar,0);assert.equal(held.dataset.noteStep,0);
+  a.fire('riff-undo');assert.equal(a.run('riffTimeline(selected.guitar)[0].length'),2);a.fire('riff-redo');
+  a.run('commitRiff(editRiffSpan(selected.guitar,0,0,40,0,{end:40}))');assert.equal(a.run('riffTimeline(selected.guitar)[0].length'),24);
+  a.run('commitRiff(editRiffSpan(selected.guitar,0,0,40,0,{cut:18}))');
+  assert.deepEqual(a.plain(a.run('riffVoiceSpans(selected.guitar[0][0],40)')),[[0,18],[19,5]]);
+  const events=midiTracks(a.run('encodeMidi(selected,"guitar")'))[0];
+  assert.ok(events.some(e=>e.status===144&&e.body[0]===43&&e.tick===4*120));
+  assert.ok(events.some(e=>e.status===128&&e.body[0]===40&&e.tick===18*120));
+  assert.ok(events.some(e=>e.status===144&&e.body[0]===40&&e.tick===19*120));
+  assert.deepEqual(a.plain(a.run('readArrangement(createArrangement()).parts[0].pattern.guitar')),a.plain(a.run('selected.guitar')));
+  await a.run('togglePlayback()');a.run('globalThis.riffPlayed=[];sound.guitar=(time,voices)=>riffPlayed.push(...voices.map(v=>[v.pitch,v.absoluteStep,v.length]));');
+  for(let i=0;i<36;i++)a.run('sound.context.currentTime+=.1;schedule()');
+  assert.ok(a.run('riffPlayed.some(v=>v[0]===40&&v[1]===19&&v[2]===5)'));a.run('stop()');
+});
+
+test('ChatGPT preserves overlapping riff durations and constrains repeated pitches',()=>{
+  const a=app();a.context.answer={notes:[{step:0,pitches:[40,47],duration:20,durations:[20,3],articulation:'open'},{step:4,pitches:[43],duration:6,articulation:'open'},{step:18,pitches:[40],duration:8,articulation:'open'}]};
+  a.run('globalThis.riffAnswer=readChatRiff(answer,chatTrackContext("riff"))');
+  const voices=a.plain(a.run('riffTimeline(riffAnswer).map(v=>[v.absoluteStep,v.pitch,v.length])'));
+  assert.deepEqual(voices,[[0,40,18],[0,47,3],[4,43,6],[18,40,8]]);
+  for(const part of ['riff','arrangement','section'])assert.match(a.run(`chatTrackPrompt(chatTrackContext('${part}'),'')`),/durations/);
+  a.context.answer.notes[0].durations=[65,3];assert.throws(()=>a.run('readChatRiff(answer,chatTrackContext("riff"))'));
+});
+
+test('generated riff overlaps are style-dependent and remain valid in saved arrangements',()=>{
+  const a=app();const counts=a.plain(a.run(`(()=>{
+    const out={};let seed=42;const random=Math.random;Math.random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);
+    try {for(const style of ['stoner','hard','punk']) {out[style]=0;for(let i=0;i<30;i++) {
+      const c={...config,style,key:i%12,scale:['minor','phrygian','blues'][i%3]};
+      const bars=i%2?generatePolyRiff(c):generateGuitar(c);projectNotes(bars,4,false);
+      const voices=riffTimeline(bars);out[style]+=voices.filter(v=>voices.some(w=>w.pitch!==v.pitch&&w.absoluteStep>v.absoluteStep&&w.absoluteStep<v.absoluteStep+v.length)).length;
+      for(const v of voices)if(voices.some(w=>w.pitch===v.pitch&&w.absoluteStep>v.absoluteStep&&w.absoluteStep<v.absoluteStep+v.length))throw Error('Same pitch overlaps');
+    }}return out;}finally{Math.random=random;}
+  })()`));assert.ok(counts.stoner>counts.hard);assert.ok(counts.hard>counts.punk);
+});

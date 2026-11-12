@@ -36,7 +36,7 @@ function projectNotes(value, count, single, nullable = false, minPitch = 38, max
       projectCheck(!positions.has(step)); positions.add(step);
       const articulation = projectChoice(note.articulation, single ? ['single'] : ['open', 'mute']);
       const result = {step, root: projectNumber(note.root, minPitch, maxPitch, true),
-        length: projectNumber(note.length, .001, single ? count * 16 - bar * 16 - step : 16 - step), articulation};
+        length: projectNumber(note.length, .001, count * 16 - bar * 16 - step), articulation};
       if (note.fifth !== undefined) result.fifth = projectNumber(note.fifth, 0, 24, true);
       if (note.transition !== undefined) result.transition = projectChoice(note.transition, ['slide', 'hammer']);
       if (note.from !== undefined) result.from = projectNumber(note.from, 38, 86, true);
@@ -65,12 +65,12 @@ function projectNotes(value, count, single, nullable = false, minPitch = 38, max
         const pitches = guitarPitches(result);
         result.voiceEdits = Object.fromEntries(entries.map(([pitch, spans]) => {
           projectCheck(Number.isInteger(Number(pitch)) && Number(pitch) >= 38 && Number(pitch) <= 86 && String(Number(pitch)) === pitch
-            && Array.isArray(spans) && spans.length <= 16 && (pitches.includes(Number(pitch)) || spans.length === 0));
+            && Array.isArray(spans) && spans.length <= count * 16 && (pitches.includes(Number(pitch)) || spans.length === 0));
           let end = 0;
           return [pitch, spans.map(pair => {
             projectCheck(Array.isArray(pair) && pair.length === 2);
-            const offset = projectNumber(pair[0], end, 16 - step);
-            const length = projectNumber(pair[1], .001, 16 - step - offset);
+            const offset = projectNumber(pair[0], end, count * 16 - bar * 16 - step);
+            const length = projectNumber(pair[1], .001, count * 16 - bar * 16 - step - offset);
             end = offset + length;
             return [offset, length];
           })];

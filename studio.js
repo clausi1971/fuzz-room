@@ -258,9 +258,9 @@ function renderTimeline(pattern) {
     const lead = pattern.lead && element('div', 'lead-steps');
     const bass = pattern.bass && element('div', 'bass-steps');
     const drums = element('div', 'beats');
-    const attacks = pattern.mode === 'riff' ? riffAttacks(notes) : [];
+    const attacks = pattern.mode === 'riff' ? riffTimeline(pattern.guitar).filter(voice => Math.floor(voice.absoluteStep / stepsPerBar) === bar) : [];
     for (let step = 0; step < stepsPerBar; step++) {
-      const voices = attacks.filter(voice => voice.step === step);
+      const voices = attacks.filter(voice => voice.absoluteStep % stepsPerBar === step);
       const note = pattern.mode === 'riff' ? voices[0]?.note : notes.find(note => note.step === step);
       const editable = note && note.articulation !== 'single';
       const tick = element(editable ? 'button' : 'span', note ? `step note stroke-${note.articulation}` : 'step');
@@ -269,7 +269,7 @@ function renderTimeline(pattern) {
         const muted = note.articulation === 'mute';
         tick.type = 'button';
         tick.classList.add('attack');
-        tick.dataset.bar = bar;
+        tick.dataset.bar = voices[0].bar;
         tick.dataset.step = note.step;
         tick.dataset.column = step;
         tick.disabled = get('lock-guitar').checked;
@@ -303,11 +303,11 @@ function renderTabs(id, guitar, bass = false) {
   const markers = ['  '];
   const mark = {mute: 'PM ', open: 'O  ', single: '♪  '};
   const techniques = {slide: 'S', hammer: 'H', bend: 'B', vibrato: 'V'};
-  guitar.forEach(notes => {
+  guitar.forEach((notes, barIndex) => {
     const bar = names.map(() => Array(stepsPerBar).fill('---'));
     const technique = Array(stepsPerBar).fill('   ');
-    const entries = notes.every(note => note.articulation === 'single') ? notes : riffAttacks(notes).map(({note, step, index}) => ({
-      ...note, step, voicing: [guitarFrets(note)[index]],
+    const entries = notes.every(note => note.articulation === 'single') ? notes : riffTimeline(guitar).filter(voice => Math.floor(voice.absoluteStep / stepsPerBar) === barIndex).map(({note, absoluteStep, index}) => ({
+      ...note, step: absoluteStep % stepsPerBar, voicing: [guitarFrets(note)[index]],
     }));
     for (const note of entries) {
       const color = `stroke-${note.articulation}`;
@@ -397,8 +397,8 @@ function renderRiffGrid(bars = selected.guitar) {
   const locked = get('lock-guitar').checked;
   const scale = intervals(config.scale);
   const columns = gridColumns(riffBar);
-  const attacks = bars.map(riffAttacks);
-  const visibleAttacks = riffBar === -1 ? attacks.flat() : attacks[riffBar];
+  const attacks = riffTimeline(bars);
+  const visibleAttacks = riffBar === -1 ? attacks : attacks.filter(voice => voice.absoluteStep < (riffBar+1)*stepsPerBar && voice.absoluteStep+voice.length > riffBar*stepsPerBar);
   const voiced = new Set(visibleAttacks.map(voice => voice.pitch));
   const firstPitch = tunings[0];
   const lastPitch = tunings.at(-1) + 22;
@@ -419,8 +419,9 @@ function renderRiffGrid(bars = selected.guitar) {
     pitchLabel.title = pitchToneInfo(pitch).description || name;
     row.append(pitchLabel);
     for (const {bar, step} of columns) {
-      const voice = attacks[bar].find(voice => voice.pitch === pitch && voice.step <= step && voice.step + voice.length > step);
-      const onset = voice?.step === step;
+      const absoluteStep = bar * stepsPerBar + step;
+      const voice = attacks.find(voice => voice.pitch === pitch && voice.absoluteStep <= absoluteStep && voice.absoluteStep + voice.length > absoluteStep);
+      const onset = voice?.absoluteStep === absoluteStep;
       const muted = voice?.note.articulation === 'mute';
       const cell = element('button', step % 4 === 0 ? 'drum-cell riff-cell downbeat' : 'drum-cell riff-cell');
       cell.type = 'button';
@@ -429,7 +430,7 @@ function renderRiffGrid(bars = selected.guitar) {
       setGridCellPosition(cell, bar, step, 'riff');
       if (voice) {
         cell.classList.add(muted ? 'stroke-mute' : 'stroke-open');
-        cell.dataset.noteBar = bar;
+        cell.dataset.noteBar = voice.bar;
         cell.dataset.noteStep = voice.note.step;
         cell.dataset.offset = voice.offset;
         if (onset) cell.textContent = muted ? 'PM' : 'O';
@@ -776,7 +777,7 @@ function buildChatTrackPrompt(context, description) {
         drums: {hits: [{step: 0, kind: 'kick', velocity: .9}, {step: 4, kind: 'snare', velocity: .8}]},
       }),
       'Alle step-Werte sind ganzzahlige Sechzehntelpositionen von 0 bis 63. duration ist eine positive ganze Zahl in Sechzehnteln.',
-      `Riff: 1–64 Anschläge, je ein Eintrag pro Einsatz, 1–6 MIDI-Töne gleichzeitig im Bereich 38–86 in ${key}. Drop-D-Leersaiten: 38, 45, 50, 55, 59, 64. Eine Note pro Saite, höchstens vier Bünde Spannweite. articulation: open oder mute. Jeder Anschlag endet vor dem nächsten Anschlag oder am Taktende.`,
+      `Riff: 1–64 Anschläge, je ein Eintrag pro Einsatz, 1–6 MIDI-Töne gleichzeitig im Bereich 38–86 in ${key}. Drop-D-Leersaiten: 38, 45, 50, 55, 59, 64. Eine Note pro Saite, höchstens vier Bünde Spannweite. articulation: open oder mute. Unterschiedliche Tonhöhen dürfen über spätere Anschläge und Taktgrenzen hinweg ausklingen, bis höchstens zum Ende des Songteils. Ein erneuter Anschlag derselben Tonhöhe beendet deren vorherigen Klang. Optional durations: eine individuelle Länge je Ton in der Reihenfolge von pitches. Nutze bei Stoner Rock häufiger ausklingende offene Töne mit einzelnen Antworttönen, bei Hard Rock gezielt und bei Punk sparsam.`,
       `Melodie: 2–32 einstimmige Noten ohne Überschneidung, erlaubte MIDI-Töne ${pitches.join(', ')}. technique: none, hammer, slide, bend-half, bend-whole, bend-up-return, bend-release oder vibrato.`,
       'Drums: kick, snare, hat, open, tom-high (hohe Tom), tom-mid (mittlere Tom), tom (Standtom) oder crash. velocity: Zahl über 0 bis 1. Mehrere verschiedene Instrumente pro Schritt sind erlaubt.',
     ].join('\n');
@@ -792,7 +793,7 @@ function buildChatTrackPrompt(context, description) {
     return ['Komponiere ein originelles, spielbares Drop-D-Gitarrenriff für einen viertaktigen Loop in Fuzz Room.', ...brief,
       JSON.stringify({notes: [{step: 0, pitches: [root, root + 7], duration: 3, articulation: 'mute'}, {step: 4, pitches: [root], duration: 4, articulation: 'open'}]}),
       `Erlaubte MIDI-Tonhöhen: 38–86 in ${key}, tiefe Lagen bevorzugen. Drop-D-Leersaiten: MIDI 38, 45, 50, 55, 59, 64. Höchstens eine Note pro Saite und höchstens vier Bünde Spannweite zwischen gegriffenen Tönen.`,
-      'step: ganzzahliger Einsatz von 0 bis 63 in Sechzehnteln. pitches: 1–6 gleichzeitig klingende MIDI-Töne. duration: Länge in Sechzehnteln, höchstens bis zum nächsten Anschlag oder Taktende. articulation: open oder mute. Nur ein Eintrag pro Einsatz.',
+      'step: ganzzahliger Einsatz von 0 bis 63 in Sechzehnteln. pitches: 1–6 gleichzeitig klingende MIDI-Töne. duration: Länge in Sechzehnteln, höchstens bis zum Ende des Songteils. Unterschiedliche Tonhöhen dürfen über spätere Anschläge und Taktgrenzen weiterklingen; dieselbe Tonhöhe wird beim erneuten Anschlag beendet. Optional durations: individuelle Längen je Ton, gleiche Reihenfolge wie pitches. Bei Stoner Rock häufiger lange offene Töne mit einzelnen Antworttönen darüber oder darunter, bei Hard Rock gezielt und bei Punk sparsam. articulation: open oder mute. Nur ein Eintrag pro Einsatz.',
     ].join('\n');
   }
   const pitches = melodyPitches(context);
@@ -846,22 +847,21 @@ function readChatRiff(value, context) {
   const positions = new Set();
   for (const note of notes) {
     if (!note || !Number.isInteger(note.step) || note.step < 0 || note.step >= steps
-        || !Number.isInteger(note.duration) || note.duration < 1 || note.duration > stepsPerBar
+        || !Number.isInteger(note.duration) || note.duration < 1 || note.duration > steps - note.step
         || !['open', 'mute'].includes(note.articulation) || !Array.isArray(note.pitches) || !note.pitches.length || note.pitches.length > tunings.length
         || new Set(note.pitches).size !== note.pitches.length || !note.pitches.every(pitch => Number.isInteger(pitch)
           && pitch >= tunings[0] && pitch <= tunings.at(-1) + 22 && scale.includes((pitch - context.key + 120) % 12))) {
       throw new Error('Ein Riffanschlag passt nicht zur Tonart, Länge oder Spielweise. Bitte ChatGPT, die Vorgaben einzuhalten.');
     }
+    if (note.durations !== undefined && (!Array.isArray(note.durations) || note.durations.length !== note.pitches.length || !note.durations.every(length => Number.isInteger(length) && length >= 1 && length <= steps-note.step))) throw new Error('Die individuellen Rifftonlängen müssen zu den pitches passen und innerhalb des Songteils enden.');
     if (positions.has(note.step)) throw new Error('Fasse gleichzeitig gespielte Rifftöne in einem pitches-Feld zusammen.');
     positions.add(note.step);
     const pitches = note.pitches.toSorted((a, b) => a - b);
     const voicing = findRiffVoicing(pitches, []);
     if (!voicing) throw new Error(`Der Griff in Takt ${Math.floor(note.step / stepsPerBar) + 1}, Schritt ${note.step % stepsPerBar + 1} ist in Drop D nicht spielbar.`);
-    bars[Math.floor(note.step / stepsPerBar)].push({step: note.step % stepsPerBar, root: pitches[0], length: note.duration, articulation: note.articulation, voicing});
+    bars[Math.floor(note.step / stepsPerBar)].push({step: note.step % stepsPerBar, root: pitches[0], length: note.duration, articulation: note.articulation, voicing, ...(note.durations ? {voiceEdits: Object.fromEntries(note.pitches.map((pitch,index) => [pitch,[[0,note.durations[index]]]]))} : {})});
   }
-  return bars.map(notes => notes.sort((a, b) => a.step - b.step).map((note, index) => ({
-    ...note, length: Math.min(note.length, (notes[index + 1]?.step ?? stepsPerBar) - note.step),
-  })));
+  return normalizeRiffSpans(bars.map(notes => notes.sort((a,b) => a.step-b.step)));
 }
 
 function readChatDrums(value, count = selected.guitar.length) {
@@ -1114,7 +1114,7 @@ function schedule() {
   while (playback.nextTime < now + .12) {
     if (playback.step === 0) {
       playback.scheduled = playback.song ? playback.song[playback.songIndex].pattern : selected;
-      playback.riffAttacks = playback.scheduled.mode === 'riff' ? playback.scheduled.guitar.map(riffAttacks) : null;
+      playback.riffAttacks = playback.scheduled.mode === 'riff' ? riffTimeline(playback.scheduled.guitar) : null;
     }
     const pattern = playback.scheduled;
     const stepDuration = 15 / pattern.tempo;
@@ -1126,7 +1126,7 @@ function schedule() {
       sound.drum(time + voice.delay + Math.random() * .005, hit.kind, hit.velocity * (.94 + Math.random() * .12));
     }
     const note = pattern.guitar[bar].find(note => note.step === step);
-    const voices = playback.riffAttacks?.[bar].filter(voice => voice.step === step);
+    const voices = playback.riffAttacks?.filter(voice => voice.absoluteStep === bar * stepsPerBar + step);
     if (voices?.length) sound.guitar(time, voices, stepDuration, step === 0 ? .91 : .77);
     if (note && pattern.mode === 'melody') sound.lead(time, note, stepDuration);
     const bass = pattern.bass?.[bar].find(note => note.step === step);
@@ -1411,7 +1411,7 @@ get('riff-grid').addEventListener('click', event => {
   const bar = Number(cell.dataset.bar);
   const guitar = cell.dataset.noteStep === undefined
     ? editRiffPitch(selected.guitar, bar, step, pitch, get('riff-articulation').value || 'open')
-    : editRiffSpan(selected.guitar, bar, Number(cell.dataset.noteStep), pitch, Number(cell.dataset.offset), {remove: true});
+    : editRiffSpan(selected.guitar, Number(cell.dataset.noteBar), Number(cell.dataset.noteStep), pitch, Number(cell.dataset.offset), {remove: true});
   if (!guitar) {
     get('riff-edit-status').textContent = 'Diese Töne ergeben zusammen keinen spielbaren Drop-D-Griff. Entferne zuerst einen Ton.';
     return;
@@ -1536,9 +1536,9 @@ bindNoteGrid({
 bindNoteGrid({
   id: 'riff-grid', source: () => selected.guitar, render: renderRiffGrid, commit: commitRiff,
   resize: (bars, {bar, step, pitch, offset}, current, end) => editRiffSpan(bars, bar, step, pitch, offset, {
-    end: current > bar ? stepsPerBar : current < bar ? 1 : end,
+    end: (current - bar) * stepsPerBar + end,
   }),
-  cut: (bars, {bar, step, pitch, offset, origin}) => editRiffSpan(bars, bar, step, pitch, offset, {cut: origin}),
+  cut: (bars, {bar, step, pitch, offset, origin}, current) => editRiffSpan(bars, bar, step, pitch, offset, {cut: (current-bar)*stepsPerBar + origin}),
 });
 get('drum-grid').addEventListener('click', event => {
   const cell = event.target.closest('button[data-voice]');
