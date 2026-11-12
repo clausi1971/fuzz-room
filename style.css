@@ -295,3 +295,21 @@ span.tone-blues-seven,.tone-blues-seven > .drum-label {color:#9bbfe5;font-weight
 .riff-generation-choices input {accent-color:var(--open);width:1.1rem;height:1.1rem}
 .riff-generation p {font-size:.83rem;color:var(--muted);margin:.65rem 0 0}
 .riff-generation #riff-generation-status:empty {display:none}
+
+:root {--vocal:#f0aca6}
+.track[data-track="vocal"],.track-editor[data-track="vocal"] {--track-color:var(--vocal)}
+.midi-export[data-track="vocal"] {--midi-color:var(--vocal);--midi-background:#422d30}
+.vocal-cell[aria-pressed="true"],.vocal-cell.vocal-hold {background:var(--vocal);border-color:var(--vocal);color:var(--panel)}
+.vocal-cell.vocal-hold {opacity:.55}
+.vocal-range-label {display:flex;align-items:center;gap:.6rem;margin:.7rem 0}
+.vocal-steps {display:flex;gap:2px;height:6px;margin-top:3px}
+.vocal-steps .beat {flex:1;background:transparent}.vocal-steps .beat.hit {background:var(--vocal)}
+.ai-tools .vocal-ai-button {color:var(--vocal);border-color:var(--vocal);background:#422d30}
+
+.track-summary .track-heading {margin-right:auto}
+.track-heading-volume {width:clamp(12rem,25vw,19rem);margin-left:auto;align-self:center;flex:none}
+.track-heading-volume label {display:flex;align-items:center;gap:.5rem;font: .8rem ui-monospace,monospace;color:var(--text)}
+.track-heading-volume input {width:100%;min-width:4rem;margin:0;accent-color:var(--track-color)}
+.track-heading-volume input:disabled {opacity:.5}
+.track-summary .raster-chevron {margin-left:.5rem}
+@media(max-width:40rem){.track-summary {flex-wrap:wrap}.track-heading-volume {width:100%;order:3;margin:.7rem 0 0}.track-summary .raster-chevron {margin-left:auto}}

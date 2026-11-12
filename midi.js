@@ -46,7 +46,7 @@ function encodeMidi(pattern, only) {
       }
     }
     const independent = bars.some(notes=>notes.some(note=>Object.keys(note.voiceTechniques??{}).length));
-    const techniqueChannels=[3,4,5,6,7,8,10,11,12,13,14,15];
+    const techniqueChannels=[3,4,5,6,7,8,10,11,12,13,14];
     const channelEnds=Object.fromEntries(techniqueChannels.map(ch=>[ch,0]));
     if(independent) for(const ch of techniqueChannels) {
       events.push({tick:0,order:0,bytes:[0xc0+ch,patch]});
@@ -114,6 +114,7 @@ function encodeMidi(pattern, only) {
     };
     if (pattern.lead) tracks.lead = ['Melodie', guitarEvents(pattern.lead, 1, 29)];
     if (pattern.bass) tracks.bass = ['Bass', guitarEvents(pattern.bass, 2, 33)];
+    if (pattern.vocal) tracks.vocal = ['Gesang', guitarEvents(pattern.vocal, 15, 52)];
     if (only && !tracks[only]) return null;
     const chunks = only
       ? [track(tracks[only][0], [...timing, ...tracks[only][1]])]
@@ -126,7 +127,7 @@ function encodeMidi(pattern, only) {
   function downloadMidi(pattern, only) {
     const midi = encodeMidi(pattern, only);
     if (!midi) return;
-    const part = {guitar:pattern.mode==='melody'?'melodie':'riff',lead:'melodie',drums:'drums',bass:'bass'}[only]??'alle-spuren';
+    const part = {guitar:pattern.mode==='melody'?'melodie':'riff',lead:'melodie',drums:'drums',bass:'bass',vocal:'gesang'}[only]??'alle-spuren';
     pendingMidi = midi;
     document.getElementById('midi-filename').value = 'fuzz-room-'+part+'-'+pattern.tempo+'bpm';
     document.getElementById('midi-export-dialog').showModal();

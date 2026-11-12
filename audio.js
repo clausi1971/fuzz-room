@@ -33,6 +33,8 @@ class LoopSound {
 
     this.guitarLevel = ctx.createGain();
     this.guitarLevel.connect(this.master);
+    this.vocalLevel = ctx.createGain();
+    this.vocalLevel.connect(this.master);
     this.bassLevel = ctx.createGain();
     this.bassLevel.connect(this.master);
     this.bassInput = this.filter('highpass', 28);
@@ -59,17 +61,18 @@ class LoopSound {
       return input;
     });
 
-    this.leadInput = this.filter('highpass', 135);
+    this.leadInput = this.filter('highpass', 95);
     const leadDrive = ctx.createWaveShaper();
-    leadDrive.curve = Float32Array.from({length: 4097}, (_, i) => Math.tanh((i / 2048 - 1) * 6.2 + .12) - Math.tanh(.12));
+    leadDrive.curve = Float32Array.from({length: 4097}, (_, i) => Math.tanh((i / 2048 - 1) * 4.8 + .16) - Math.tanh(.16));
     leadDrive.oversample = '2x';
     const leadLevel = ctx.createGain();
     leadLevel.gain.value = .28;
     this.leadLevel = ctx.createGain();
     this.leadLevel.connect(this.master);
-    const leadBody = this.filter('peaking', 950, .9);
-    leadBody.gain.value = 3.5;
-    this.leadInput.connect(leadDrive).connect(this.filter('highpass', 95)).connect(leadBody).connect(this.filter('lowpass', 3450)).connect(leadLevel).connect(this.leadLevel);
+    const leadBody = this.filter('peaking', 850, .8);
+    leadBody.gain.value = 4.5;
+    const pickPresence=this.filter('peaking',2200,1.1);pickPresence.gain.value=2;
+    this.leadInput.connect(leadDrive).connect(this.filter('highpass', 95)).connect(leadBody).connect(pickPresence).connect(this.filter('lowpass', 3200)).connect(leadLevel).connect(this.leadLevel);
     this.leadSustainWave = ctx.createPeriodicWave(new Float32Array(6), Float32Array.of(0, .74, .38, .22, .12, .055));
   }
 
@@ -148,7 +151,11 @@ class LoopSound {
     const length = note.length * stepDuration;
     const buffer = this.string(note.root, false, 0);
     const source = this.voice(buffer, time, length, legato ? .71 : .79, this.leadInput, legato);
-    const sustain = length > 1.7 ? this.sustainString(time, note.root, length, this.leadInput, 0, .14) : null;
+    const sustain = length > 1.7 ? this.sustainString(time, note.root, length, this.leadInput, 0, .035) : null;
+    if(!legato) {
+      const pick=this.sample('lead-pick',.025,(data,rate)=>{let last=0;for(let i=0;i<data.length;i++){const noise=Math.random()*2-1;data[i]=(noise-last)*Math.exp(-i/(rate*.004));last=noise;}});
+      this.voice(pick,time,.025,.055,this.leadInput);
+    }
     const curve = leadPitchCurve(note, stepDuration);
     for (const voice of sustain ? [source, sustain] : [source]) {
       for (const [step, cents] of curve) {
@@ -156,6 +163,23 @@ class LoopSound {
         else voice.detune.linearRampToValueAtTime(cents, time + step * stepDuration);
       }
     }
+  }
+
+  vocal(time,note,stepDuration) {
+    const ctx=this.context,length=note.length*stepDuration;
+    const oscillator=ctx.createOscillator();oscillator.type='sawtooth';oscillator.frequency.value=440*2**((note.root-69)/12);
+    const envelope=ctx.createGain(),attack=Math.min(.07,length*.2),release=Math.min(.14,length*.3);
+    envelope.gain.setValueAtTime(0,time);envelope.gain.linearRampToValueAtTime(.09,time+attack);
+    envelope.gain.setValueAtTime(.09,time+length-release);envelope.gain.linearRampToValueAtTime(0,time+length);
+    envelope.connect(this.vocalLevel);
+    for(const [frequency,level] of [[800,1],[1150,.6],[2900,.25]]) {
+      const formant=this.filter('bandpass',frequency,7),gain=ctx.createGain();gain.gain.value=level;
+      oscillator.connect(formant).connect(gain).connect(envelope);
+    }
+    const vibrato=ctx.createOscillator(),depth=ctx.createGain();vibrato.frequency.value=5.3;depth.gain.value=10;
+    vibrato.connect(depth).connect(oscillator.detune);
+    this.trackVoice(oscillator);this.trackVoice(vibrato);
+    oscillator.start(time);vibrato.start(time);oscillator.stop(time+length+.02);vibrato.stop(time+length+.02);
   }
 
   bass(time, note, stepDuration) {
@@ -251,12 +275,13 @@ class LoopSound {
     this.master.gain.setTargetAtTime(value, this.context.currentTime, .012);
   }
 
-  setTrackLevels(guitar, drums, lead, bass = 1) {
+  setTrackLevels(guitar, drums, lead, bass = 1, vocal = .8) {
     const now = this.context.currentTime;
     this.guitarLevel.gain.setTargetAtTime(guitar, now, .012);
     this.drumLevel.gain.setTargetAtTime(drums, now, .012);
     this.leadLevel.gain.setTargetAtTime(lead, now, .012);
     this.bassLevel.gain.setTargetAtTime(bass, now, .012);
+    this.vocalLevel.gain.setTargetAtTime(vocal, now, .012);
   }
 
   stop() {

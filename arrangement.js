@@ -116,6 +116,7 @@ function projectDrums(value, count) {
 
 function projectDetails(value, field) {
   projectCheck(value && typeof value === 'object');
+  if(field==='vocal')return {vocalName:projectText(value.vocalName??'Optional'),vocalRange:projectChoice(value.vocalRange??'mid',Object.keys(vocalRanges))};
   if (field === 'bass') return {bassName:projectText(value.bassName ?? 'Bass'),bassStyle:projectChoice(value.bassStyle ?? 'riff',['riff','root','independent'])};
   if (field === 'drums') return {grooveName: projectText(value.grooveName), groove: projectNumber(value.groove, 0, 2, true)};
   const melody = () => ({melodyEdited: Boolean(value.melodyEdited), leadTake: projectNumber(value.leadTake, 0, 2, true)});
@@ -146,18 +147,18 @@ function readArrangement(text) {
       key: projectNumber(p.key, 0, 11, true), scale: projectChoice(p.scale, Object.keys(scales)),
       tempo: projectNumber(p.tempo, 55, 210, true), mode,
       guitar: projectNotes(p.guitar, count, mode === 'melody'), drums: projectDrums(p.drums, count),
-      lead: projectNotes(p.lead, count, true, true), bass: projectNotes(p.bass ?? null,count,true,true,26,55)};
-    const details = {...projectDetails(meta, 'guitar'), ...projectDetails(meta, 'drums'), ...projectDetails(meta, 'lead'), ...projectDetails(meta, 'bass'),
+      lead: projectNotes(p.lead, count, true, true), bass: projectNotes(p.bass ?? null,count,true,true,26,55),vocal:projectNotes(p.vocal??null,count,true,true,45,77)};
+    const details = {...projectDetails(meta, 'guitar'), ...projectDetails(meta, 'drums'), ...projectDetails(meta, 'lead'), ...projectDetails(meta, 'bass'),...projectDetails(meta,'vocal'),
       style: projectChoice(meta.style, ['stoner', 'punk', 'hard']),
       melodyStyle: projectChoice(meta.melodyStyle, ['desert', 'psych', 'stoner', 'blues']), muteLead: Boolean(meta.muteLead)};
     projectCheck(details.mode === mode);
-    const history = Object.fromEntries(['guitar', 'drums', 'lead', 'bass'].map(field => {
+    const history = Object.fromEntries(['guitar', 'drums', 'lead', 'bass', 'vocal'].map(field => {
       const stored = part.history?.[field] ?? {past: [], future: []};
       const stacks = Object.fromEntries(['past', 'future'].map(stack => {
         projectCheck(Array.isArray(stored[stack]) && stored[stack].length <= 30);
         return [stack, stored[stack].map(snapshot => {
           const details = projectDetails(snapshot?.details, field);
-          const data = field === 'bass' ? projectNotes(snapshot.data,count,true,true,26,55) : field === 'drums' ? projectDrums(snapshot.data, count)
+          const data = field==='vocal'?projectNotes(snapshot.data??null,count,true,true,45,77):field === 'bass' ? projectNotes(snapshot.data,count,true,true,26,55) : field === 'drums' ? projectDrums(snapshot.data, count)
             : projectNotes(snapshot.data, count, field === 'lead' || details.mode === 'melody', field === 'lead');
           return {data, details};
         })];
@@ -167,7 +168,7 @@ function readArrangement(text) {
     return {id, name: projectText(part.name, 60), type: projectText(part.type, 60), pattern, meta: details, history};
   });
   projectCheck(ids.has(value.activeSection));
-  const levels = Object.fromEntries(mixerChannels.map(channel => [channel, projectNumber(value.mixer?.levels?.[channel] ?? (channel==='bass-volume' && value.version===1?100:undefined), 0, 100)]));
+  const levels = Object.fromEntries(mixerChannels.map(channel => [channel, projectNumber(value.mixer?.levels?.[channel] ?? (channel==='vocal-volume'?80:channel==='bass-volume' && value.version===1?100:undefined), 0, 100)]));
   projectCheck(Array.isArray(value.mixer?.mutes) && value.mixer.mutes.every(channel => mixerChannels.includes(channel) && channel !== 'lead-volume'));
   const guides = Object.fromEntries(['riff', 'melody'].map(track => [track,
     Object.fromEntries(['snare', 'kick'].map(kind => [kind, Boolean(value.view?.guides?.[track]?.[kind])]))]));

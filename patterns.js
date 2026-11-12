@@ -582,3 +582,21 @@ function riffGenerationOptions(config) {
   const profile=config.riffTechniques??riffTechniqueProfiles[config.musicStyle??config.style]??defaultRiffTechniqueProfiles().stoner;
   return {...profile,sustain:Boolean(profile.sustain&&profile.open)};
 }
+
+const vocalRanges={low:{name:'Tief · A2–E4',min:45,max:64},mid:{name:'Mittel · C3–A4',min:48,max:69},high:{name:'Hoch · G3–F5',min:55,max:77}};
+function vocalPitches(config,range='mid') {
+  const {min,max}=vocalRanges[range]??vocalRanges.mid;
+  return Array.from({length:max-min+1},(_,i)=>min+i).filter(pitch=>intervals(config.scale).includes((pitch-config.key+120)%12));
+}
+function makeVocal(config,riff,drums,range='mid') {
+  const pitches=vocalPitches(config,range),home=pitches.filter(pitch=>pitch%12===config.key).reduce((best,pitch)=>Math.abs(pitch-60)<Math.abs(best-60)?pitch:best,pitches[0]);
+  const at=pitches.indexOf(home),motif=[0,2,1,0,3,2,1,0];
+  return riff.map((notes,bar)=>{
+    const rhythm=config.style==='punk'?[0,4,8,12]:bar%4===3?[2,9]:[0,8];
+    return rhythm.map((step,index)=>{
+      const offset=motif[(bar*2+index)%motif.length],root=pitches[Math.max(0,Math.min(pitches.length-1,at+offset))];
+      const available=(rhythm[index+1]??16)-step;
+      return {step,root,length:Math.min(config.style==='punk'?2.6:bar%4===3?4:6,available-.6),articulation:'single'};
+    });
+  });
+}

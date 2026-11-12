@@ -300,3 +300,39 @@ test('ChatGPT receives style choices, rejects excluded techniques and detects ch
  delete a.context.answer.notes[0].techniques;a.context.answer.notes[0].duration=8;a.context.answer.notes.push({step:2,pitches:[43],duration:2,articulation:'open'});assert.throws(()=>a.run('readChatRiff(answer,chatTrackContext("riff"))'),/ausklingende/);
  a.fire('open-ai-riff');a.run('aiPromptContext=chatTrackContext("riff")');a.get('riff-generate-bend').checked=true;a.fire('riff-generate-bend','change');a.get('ai-response').value=JSON.stringify({notes:[{step:0,pitches:[40],duration:2,articulation:'open'}]});a.fire('ai-melody-form','submit');assert.match(a.get('ai-dialog-status').textContent,/geändert/);assert.equal(a.run('chatComparison'),undefined);
 });
+
+test('vocal generation, grid editing, history, key changes, mixer and solo preserve companions',async()=>{
+ const a=app();const riff=a.run('selected.guitar'),drums=a.run('selected.drums');a.fire('toggle-vocal');assert.equal(a.run('selected.vocal.length'),4);assert.equal(a.get('export-vocal').disabled,false);
+ a.run('commitVocal(editMelodyNote(selected.vocal,0,0,64,{length:10,resize:true}))');const edited=a.run('JSON.stringify(selected.vocal)');a.fire('vocal-undo');assert.notEqual(a.run('JSON.stringify(selected.vocal)'),edited);a.fire('vocal-redo');assert.equal(a.run('JSON.stringify(selected.vocal)'),edited);assert.strictEqual(a.run('selected.guitar'),riff);assert.strictEqual(a.run('selected.drums'),drums);
+ await a.fire('vocal-solo');assert.equal(a.run('playback.soloTrack'),'vocal');assert.ok(a.run('sound.vocalLevel.gain.value>0&&sound.vocalLevel.gain.value<=1'));assert.equal(a.run('sound.guitarLevel.gain.value'),0);a.run('sound.context.currentTime+=.1;schedule()');await a.fire('vocal-solo');assert.equal(a.run('playback.soloTrack'),null);a.run('stop()');
+ a.choose('key','7');assert.ok(a.run('selected.vocal.flat().every(note=>vocalPitches(config,vocalRange).includes(note.root))'));
+ a.fire('toggle-vocal');assert.equal(a.run('selected.vocal'),null);a.fire('vocal-undo');assert.ok(a.run('selected.vocal'));
+});
+
+test('vocal ChatGPT uses all companions and range; comparison and MIDI are independent',()=>{
+ const a=app();a.fire('toggle-bass');a.fire('toggle-lead');a.fire('header-ai-vocal');assert.equal(a.get('ai-vocal-fields').hidden,false);
+ const prompt=a.run('chatTrackPrompt(chatTrackContext("vocal"),"ruhig")');for(const term of ['Riff','Drums','Bass','Instrumentale Melodie','90 BPM','Stimmlage','Atempausen'])assert.ok(prompt.includes(term));
+ a.get('ai-vocal-range').value='low';a.context.answer={notes:[{step:0,pitch:52,duration:6},{step:8,pitch:55,duration:4}]};a.get('ai-response').value=JSON.stringify(a.context.answer);a.fire('ai-melody-form','submit');assert.equal(a.run('selected.vocal'),null);assert.equal(a.run('chatComparison.candidate.vocal.length'),4);
+ a.run('finishComparison(true)');assert.equal(a.run('vocalRange'),'low');assert.equal(a.get('vocal-range').value,'low');
+ a.fire('editor-action-export-vocal');assert.equal(a.get('midi-export-dialog').open,true);a.fire('midi-export-cancel');
+ const events=midiTracks(a.run('encodeMidi(selected,"vocal")'))[0];assert.ok(events.some(e=>e.status===207&&e.body[0]===52));assert.ok(events.some(e=>e.status===159&&e.body[0]===52));
+ a.context.answer.notes[1].step=2;assert.throws(()=>a.run('readChatVocal(answer,chatTrackContext("vocal"))'),/überlappende/);
+ a.context.answer.notes[1].step=8;a.context.answer.notes[0].pitch=77;assert.throws(()=>a.run('readChatVocal(answer,chatTrackContext("vocal"))'),/Stimmlage/);
+});
+
+test('vocal settings, notes and history survive files; old arrangements load with empty vocals',()=>{
+ const a=app();a.fire('toggle-vocal');a.choose('vocal-range','high');a.fire('new-vocal');a.get('vocal-volume').value='63';
+ const saved=a.run('createArrangement()');a.context.saved=saved;a.run('loadArrangement(readArrangement(saved))');assert.equal(a.run('vocalRange'),'high');assert.equal(a.get('vocal-volume').value,63);assert.ok(a.run('selected.vocal'));assert.ok(a.run('sectionHistory(songParts[0]).vocal.past.length'));
+ const old=JSON.parse(saved);for(const part of old.parts){delete part.pattern.vocal;delete part.history.vocal;delete part.meta.vocalRange;delete part.meta.vocalName;}delete old.mixer.levels['vocal-volume'];a.context.old=old;a.run('loadArrangement(readArrangement(JSON.stringify(old)))');assert.equal(a.run('selected.vocal'),null);assert.equal(a.get('vocal-volume').value,80);
+ for(const range of ['low','mid','high'])for(const style of ['stoner','punk','hard']){a.context.range=range;a.context.style=style;assert.ok(a.run('makeVocal({...config,style},selected.guitar,selected.drums,range).flat().every(note=>vocalPitches(config,range).includes(note.root)&&note.length>0&&note.step+note.length<=16)'));}
+});
+
+test('whole song parts include vocals and keep range and voice history independently',async()=>{
+ const a=app();a.fire('toggle-vocal');a.fire('open-ai-section');a.get('ai-section-bars').value='8';a.get('ai-section-type').value='Bridge';a.run('aiPromptContext=chatTrackContext("section")');
+ assert.match(a.run('chatTrackPrompt(aiPromptContext,"ruhig")'),/vocal/);
+ a.get('ai-response').value=JSON.stringify({riff:{notes:[{step:0,pitches:[40,47],duration:4,articulation:'open'}]},drums:{hits:[{step:0,kind:'kick'}]},melody:{notes:[{step:0,pitch:67,duration:8},{step:64,pitch:69,duration:8}]},vocal:{notes:[{step:0,pitch:64,duration:6},{step:64,pitch:67,duration:8}]}});
+ a.fire('ai-melody-form','submit');assert.equal(a.run('songParts.length'),2);assert.equal(a.run('selected.vocal.length'),8);assert.equal(a.run('vocalName'),'ChatGPT-Gesang');
+ await a.run('togglePlayback(true)');a.run('globalThis.sung=[];sound.vocal=(time,note)=>sung.push(note.root)');const visited=new Set();for(let i=0;i<500&&a.run('Boolean(playback)');i++){visited.add(a.run('playback.songIndex'));a.run('sound.context.currentTime+=.1;schedule()');}
+ assert.deepEqual([...visited],[0,1]);assert.ok(a.run('sung.includes(67)'));assert.equal(a.run('playback'),null);
+ a.run('openSection(1)');assert.equal(a.run('selected.vocal.length'),4);assert.equal(a.run('vocalBar'),-1);
+});
