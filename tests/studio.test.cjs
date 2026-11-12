@@ -198,3 +198,35 @@ test('tab selector follows available tracks, bass frets and live edits',()=>{
   a.fire('toggle-lead');assert.equal(a.run('tabTrack'),'riff');assert.equal(a.get('tab-melody').disabled,true);
   a.choose('mode','melody');assert.equal(a.run('tabTrack'),'melody');assert.equal(a.get('tab-riff').disabled,true);assert.equal(a.get('lead-tabs-panel').hidden,false);
 });
+
+test('riff techniques are per tone; new tones stay normal and history restores techniques',()=>{
+ const a=app();a.run(`commitRiff([[{step:0,root:38,length:2,articulation:'open',voicing:[[0,0],[1,17]]},{step:2,root:38,length:2,articulation:'open',voicing:[[0,0],[1,19]]},{step:4,root:38,length:4,articulation:'open',voicing:[[0,0],[1,17]]}],[],[],[]]);`);
+ const cell=a.get('riff-grid').querySelector('button[data-pitch="64"][data-step="2"][data-bar="0"]');
+ a.get('riff-grid').handlers.click({target:cell});assert.equal(a.run('riffSelection.pitch'),64);
+ a.fire('riff-tech-hammer');assert.equal(a.run('selected.guitar[0][1].voiceTechniques[64].type'),'hammer');assert.equal(a.run('selected.guitar[0][1].voiceTechniques[38]'),undefined);
+ a.run("riffSelection={bar:0,step:4,pitch:62,offset:0};renderRiffGrid()");a.fire('riff-tech-pull');assert.equal(a.run('selected.guitar[0][2].voiceTechniques[62].type'),'pull');
+ a.fire('riff-tech-bend-half');assert.equal(a.run('selected.guitar[0][2].voiceTechniques[62].type'),'bend-half');
+ assert.deepEqual(a.plain(a.run('leadPitchCurve(riffVoiceNote(riffAttacks(selected.guitar[0]).find(v=>v.step===4&&v.pitch===62)),15/90).map(p=>p[1])')),[0,100,0]);
+ a.run("commitRiff(editRiffPitch(selected.guitar,0,8,43,'open'))");assert.equal(a.run('Object.keys(selected.guitar[0].find(n=>n.step===8).voiceTechniques??{}).length'),0);
+ a.fire('riff-undo');a.fire('riff-undo');assert.equal(a.run('selected.guitar[0][2].voiceTechniques[62].type'),'pull');a.fire('riff-redo');
+ a.run("riffSelection={bar:0,step:4,pitch:62,offset:0};renderRiffGrid()");a.fire('riff-tech-normal');assert.equal(a.run('selected.guitar[0][2].voiceTechniques[62]'),undefined);
+ assert.equal(a.run('selected.guitar[0][1].voiceTechniques[64].type'),'hammer');
+ a.run("riffSelection={bar:0,step:0,pitch:38,offset:0};renderRiffGrid()");a.fire('riff-tech-bend-whole');assert.equal(a.run('selected.guitar[0][0].voiceTechniques?.[38]'),undefined);
+ assert.deepEqual(a.plain(a.run('readArrangement(createArrangement()).parts[0].pattern.guitar')),a.plain(a.run('selected.guitar')));
+});
+
+test('riff bend audio and MIDI affect only the chosen string and return to zero',()=>{
+ const a=app();a.run(`commitRiff([[{step:0,root:38,length:4,articulation:'open',voicing:[[0,0],[1,19]],voiceTechniques:{64:{type:'bend-whole'}}}],[],[],[]]);globalThis.curves=[];sound=new LoopSound();sound.voice=()=>({detune:{setValueAtTime(v){curves.push(v)},linearRampToValueAtTime(v){curves.push(v)}}});sound.guitar(0,riffAttacks(selected.guitar[0]),15/90,.8);`);
+ assert.deepEqual(a.plain(a.run('curves')),[0,200,0,0,200,0]);
+ const events=midiTracks(a.run('encodeMidi(selected,"guitar")'))[0];
+ const low=events.find(e=>(e.status&240)===144&&e.body[0]===38),high=events.find(e=>(e.status&240)===144&&e.body[0]===64);assert.notEqual(low.status&15,high.status&15);
+ const bends=events.filter(e=>(e.status&240)===224);assert.ok(bends.length>3);assert.ok(bends.every(e=>(e.status&15)===(high.status&15)));assert.deepEqual(bends.at(-1).body,[0,64]);
+});
+
+test('ChatGPT and app generation support sparse per-tone techniques and validate input',()=>{
+ const a=app();a.context.answer={notes:[{step:0,pitches:[38,62],duration:2,articulation:'open'},{step:2,pitches:[38,64],duration:4,articulation:'open',techniques:[{pitch:64,type:'hammer'}]},{step:6,pitches:[38,62],duration:4,articulation:'open',techniques:[{pitch:62,type:'bend-half'}]}]};
+ const bars=a.run('readChatRiff(answer,chatTrackContext("riff"))');assert.equal(bars[0][1].voiceTechniques[64].type,'hammer');assert.equal(bars[0][2].voiceTechniques[62].type,'bend-half');
+ a.context.answer.notes[2].techniques=[{pitch:38,type:'bend-whole'}];assert.throws(()=>a.run('readChatRiff(answer,chatTrackContext("riff"))'));
+ for(const part of ['riff','arrangement','section'])assert.match(a.run(`chatTrackPrompt(chatTrackContext('${part}'),'')`),/techniques/);
+ const count=a.run(`(()=>{let seed=41;const old=Math.random;Math.random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);let n=0;try{for(const style of ['stoner','hard','punk'])for(let i=0;i<15;i++){const c={...config,style,key:i%12,scale:['minor','phrygian','blues'][i%3]},bars=i%2?generateGuitar(c):generatePolyRiff(c);projectNotes(bars,4,false);n+=bars.flat().filter(note=>Object.keys(note.voiceTechniques??{}).length).length;}return n;}finally{Math.random=old;}})()`);assert.ok(count>0);
+});

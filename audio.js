@@ -124,15 +124,21 @@ class LoopSound {
   guitar(time, voices, stepDuration, velocity) {
     for (let side = 0; side < 2; side++) {
       const onset = time + (side ? .009 : 0) + Math.random() * .004;
-      for (const {note, pitch, index, length, offset} of voices) {
+      for (const voice of voices) {
+        const {note, pitch, index, length, offset} = voice;
+        const performed = riffVoiceNote(voice);
         const muted = note.articulation === 'mute';
         const buffer = this.string(pitch, muted, side);
         const start = onset + (offset ? 0 : index * .0035);
         const duration = length * stepDuration;
         const level = velocity / (1 + index * .36);
         const tail = note.voiceEdits?.[pitch] ? .012 : .032;
-        this.voice(buffer, start, duration, level, this.guitars[side], false, tail);
-        if (!muted && duration > 1.7) this.sustainString(start, pitch, duration, this.guitars[side], side, .09 * level, tail);
+        const source=this.voice(buffer, start, duration, performed.transition ? level*.78 : level, this.guitars[side], Boolean(performed.transition), tail);
+        const sustain=!muted && duration>1.7 ? this.sustainString(start,pitch,duration,this.guitars[side],side,.09*level,tail) : null;
+        for(const sourceVoice of sustain?[source,sustain]:[source]) for(const [step,cents] of leadPitchCurve(performed,stepDuration)) {
+          if(step===0) sourceVoice.detune.setValueAtTime(cents,start);
+          else sourceVoice.detune.linearRampToValueAtTime(cents,start+step*stepDuration);
+        }
       }
     }
   }

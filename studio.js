@@ -15,6 +15,7 @@ let polyphonicRiff = false;
 let groove = 0;
 let editedBar = -1;
 let riffBar = -1;
+let riffSelection = null;
 let melodyBar = -1;
 let bassBar = -1;
 let tabTrack = 'riff';
@@ -306,12 +307,12 @@ function renderTabs(id, guitar, bass = false) {
   guitar.forEach(notes => {
     const bar = names.map(() => Array(stepsPerBar).fill('---'));
     const technique = Array(stepsPerBar).fill('   ');
-    const entries = notes.every(note => note.articulation === 'single') ? notes : riffAttacks(notes).map(({note, step, index}) => ({
-      ...note, step, voicing: [guitarFrets(note)[index]],
+    const entries = notes.every(note => note.articulation === 'single') ? notes : riffAttacks(notes).map(({note, step, index, pitch}) => ({
+      ...note, step, riffTechnique: note.voiceTechniques?.[pitch]?.type, voicing: [guitarFrets(note)[index]],
     }));
     for (const note of entries) {
       const color = `stroke-${note.articulation}`;
-      const playing = (techniques[note.transition] ?? '') + (note.expression === 'bend' ? bendSymbol(note) : techniques[note.expression] ?? '');
+      const playing = (riffTechniqueSymbols[note.riffTechnique] ?? '') + (techniques[note.transition] ?? '') + (note.expression === 'bend' ? bendSymbol(note) : techniques[note.expression] ?? '');
       technique[note.step] = element('span', color, playing ? playing.padEnd(3) : mark[note.articulation]);
       for (const [string, fret] of frets(note)) bar[string][note.step] = element('span', color, String(fret).padEnd(3, '-'));
     }
@@ -432,16 +433,23 @@ function renderRiffGrid(bars = selected.guitar) {
         cell.dataset.noteBar = bar;
         cell.dataset.noteStep = voice.note.step;
         cell.dataset.offset = voice.offset;
-        if (onset) cell.textContent = muted ? 'PM' : 'O';
+        if (onset) {
+          const technique=voice.note.voiceTechniques?.[pitch]?.type;
+          cell.textContent = riffTechniqueSymbols[technique] ?? (muted ? 'PM' : 'O');
+          if(technique) {cell.classList.add('has-technique');cell.title=riffTechniqueNames[technique];}
+        }
         else cell.classList.add('riff-hold');
       }
       const articulation = voice ? (muted ? ', Palm Mute' : ', offen') + (onset ? '' : ', klingt weiter') : '';
-      cell.setAttribute('aria-label', `${name}, Takt ${bar + 1}, Schritt ${step + 1}${articulation}`);
+      if(riffSelection && voice && riffSelection.bar===bar && riffSelection.step===voice.note.step && riffSelection.pitch===pitch) cell.classList.add('selected-riff-tone');
+      const technique=voice?.note.voiceTechniques?.[pitch]?.type;
+      cell.setAttribute('aria-label', `${name}, Takt ${bar + 1}, Schritt ${step + 1}${articulation}${technique?', '+riffTechniqueNames[technique]:''}`);
       cell.setAttribute('aria-pressed', onset);
       row.append(cell);
     }
     grid.append(row);
   }
+  renderRiffTools();
   for (const button of get('riff-bar-picker').children) {
     button.setAttribute('aria-pressed', Number(button.dataset.bar) === riffBar);
   }
@@ -713,6 +721,7 @@ function chatTrackPrompt(context, description) {
     .replaceAll('2–32', `2–${steps / 2}`)
     .replaceAll('Schritt 64', `Schritt ${steps}`);
   if (['arrangement', 'section'].includes(context.part) && context.hasBass) prompt += `\nKomponiere zusätzlich die Bassspur im selben JSON als "bass":{"notes":[{"step":0,"pitch":${bassPitches(context)[0]},"duration":4}]}. Erlaubte MIDI-Töne: ${bassPitches(context).join(', ')}. Einstimmig, 1 bis ${steps} Noten, ganzzahlige Einsätze 0 bis ${steps-1}, positive ganzzahlige Dauern, Ende spätestens bei Schritt ${steps}. Stimme den Bass auf Riff, Drums, Melodie und Musikstil ab.`;
+  if (['riff','arrangement','section'].includes(context.part)) prompt += '\nRiff-Spieltechniken dezent passend zum Musikstil einsetzen, bei Stoner Rock etwas häufiger: optional techniques je Riffanschlag als Liste, z.B. [{"pitch":64,"type":"bend-half"}]. Erlaubte Typen hammer, pull, bend-half, bend-whole. Jeder Eintrag betrifft nur diesen Ton aus pitches, alle anderen Töne bleiben normal. Halbton- und Ganzton-Bendings ziehen gleichmäßig hoch und zurück. Keine Bendings auf Leersaiten. Hammer-on/Pull-off nur zum nächsten Ton auf derselben Saite, Abstand 1–4 Halbtöne, Hammer aufwärts, Pull abwärts. Eine tiefe Leersaite darf dabei normal angeschlagen werden. Die bisherigen Längenbegrenzungen bleiben bestehen.';
   if (context.part !== 'section') return prompt;
   prompt = prompt.replace('und am Ende zum Loop zurückführen.', 'und am Ende zum folgenden Songteil überleiten. Beim Outro darf der Schluss ausklingen.');
   const source = {
@@ -857,11 +866,18 @@ function readChatRiff(value, context) {
     const pitches = note.pitches.toSorted((a, b) => a - b);
     const voicing = findRiffVoicing(pitches, []);
     if (!voicing) throw new Error(`Der Griff in Takt ${Math.floor(note.step / stepsPerBar) + 1}, Schritt ${note.step % stepsPerBar + 1} ist in Drop D nicht spielbar.`);
-    bars[Math.floor(note.step / stepsPerBar)].push({step: note.step % stepsPerBar, root: pitches[0], length: note.duration, articulation: note.articulation, voicing});
+    bars[Math.floor(note.step / stepsPerBar)].push({step: note.step % stepsPerBar, root: pitches[0], length: note.duration, articulation: note.articulation, voicing, voiceTechniques: readRiffTechniques(note.techniques,pitches)});
   }
-  return bars.map(notes => notes.sort((a, b) => a.step - b.step).map((note, index) => ({
+  const result=bars.map(notes => notes.sort((a, b) => a.step - b.step).map((note, index) => ({
     ...note, length: Math.min(note.length, (notes[index + 1]?.step ?? stepsPerBar) - note.step),
   })));
+  let decorated=result;
+  for(const [bar,notes] of result.entries()) for(const note of notes) for(const [pitch,technique] of Object.entries(note.voiceTechniques??{})) {
+    const next=setRiffTechnique(decorated,bar,note.step,Number(pitch),technique.type);
+    if(!next) throw new Error('Eine Riff-Spieltechnik passt nicht zur Saite oder zum vorherigen Ton.');
+    decorated=next;
+  }
+  return decorated;
 }
 
 function readChatDrums(value, count = selected.guitar.length) {
@@ -1039,6 +1055,7 @@ function refresh(pattern, {guitar = false, drums = false, lead = false, bass = f
   const count = comparisonChange ? pattern.guitar.length : selected.guitar.length;
   pattern = {...pattern};
   for (const track of ['guitar', 'drums', 'lead', 'bass']) if (pattern[track]) pattern[track] = fitBars(pattern[track], count);
+  if(pattern.guitar && (pattern.mode??selected.mode)==='riff') pattern.guitar=sanitizeRiffTechniques(pattern.guitar);
   selected = {...selected, ...pattern};
   if (selected.bass && (selected.key !== previous.key || selected.scale !== previous.scale)) {
     const pitches = bassPitches(config);
@@ -1409,6 +1426,11 @@ get('riff-grid').addEventListener('click', event => {
   const pitch = Number(cell.dataset.pitch);
   const step = Number(cell.dataset.step);
   const bar = Number(cell.dataset.bar);
+  if (cell.dataset.noteStep !== undefined) {
+    riffSelection={bar,step:Number(cell.dataset.noteStep),pitch,offset:Number(cell.dataset.offset??0)};
+    renderRiffGrid();
+    return;
+  }
   const guitar = cell.dataset.noteStep === undefined
     ? editRiffPitch(selected.guitar, bar, step, pitch, get('riff-articulation').value || 'open')
     : editRiffSpan(selected.guitar, bar, Number(cell.dataset.noteStep), pitch, Number(cell.dataset.offset), {remove: true});
@@ -1797,3 +1819,39 @@ for (const track of ['riff','melody','bass']) get('tab-' + track).addEventListen
   renderTabView();
 });
 get('header-ai-bass').addEventListener('click', () => get('open-ai-bass').click());
+
+function readRiffTechniques(value,pitches) {
+  if(value===undefined) return {};
+  if(!Array.isArray(value)||value.length>pitches.length) throw new Error('Riff-Techniken müssen als Liste pro Ton angegeben sein.');
+  const result={};
+  for(const technique of value) {
+    if(!technique||!pitches.includes(technique.pitch)||!['hammer','pull','bend-half','bend-whole'].includes(technique.type)||result[technique.pitch]) throw new Error('Ungültige oder doppelte Riff-Spieltechnik.');
+    result[technique.pitch]={type:technique.type};
+  }
+  return result;
+}
+function renderRiffTools() {
+  const note=riffSelection && selected.guitar[riffSelection.bar]?.find(note=>note.step===riffSelection.step);
+  if(!note || !guitarPitches(note).includes(riffSelection.pitch)) riffSelection=null;
+  const type=riffSelection ? note.voiceTechniques?.[riffSelection.pitch]?.type ?? 'normal' : '';
+  for(const technique of Object.keys(riffTechniqueNames)) {
+    const button=get('riff-tech-'+technique);
+    button.disabled=!riffSelection||get('lock-guitar').checked;
+    button.setAttribute('aria-pressed',type===technique);
+  }
+  get('riff-note-delete').disabled=!riffSelection||get('lock-guitar').checked;
+  get('riff-tech-status').textContent=riffSelection ? keyNames[riffSelection.pitch%12]+(Math.floor(riffSelection.pitch/12)-1)+' · Takt '+(riffSelection.bar+1)+', Schritt '+(riffSelection.step+1)+' · '+riffTechniqueNames[type] : 'Wähle einen vorhandenen Riffton. Neue Töne starten ohne Technik.';
+}
+for(const type of Object.keys(riffTechniqueNames)) get('riff-tech-'+type).addEventListener('click',()=>{
+  if(!riffSelection||get('lock-guitar').checked) return;
+  const {bar,step,pitch}=riffSelection;
+  const bars=setRiffTechnique(selected.guitar,bar,step,pitch,type);
+  if(!bars) {get('riff-tech-status').textContent=type.startsWith('bend')?'Bending benötigt einen gegriffenen Ton, keine Leersaite.':'Hammer-on/Pull-off benötigt den passenden vorherigen Ton auf derselben Saite (1–4 Halbtöne, Hammer aufwärts, Pull abwärts).';return;}
+  commitRiff(bars);
+});
+get('riff-note-delete').addEventListener('click',()=>{
+  if(!riffSelection||get('lock-guitar').checked) return;
+  const {bar,step,pitch,offset}=riffSelection;
+  const bars=editRiffSpan(selected.guitar,bar,step,pitch,offset,{remove:true});
+  riffSelection=null;commitRiff(bars);
+});

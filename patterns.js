@@ -54,7 +54,7 @@ function leadPitchCurve(note, stepDuration) {
   if (!note.expression || (note.expression === 'vibrato' && note.length < 2.5)) return points;
 
   const end = note.length - Math.min(.12, note.length * .1);
-  if (note.expression === 'bend' && note.bendShape === 'up-return') return [[0, 0], [end / 2, 200], [end, 0]];
+  if (note.expression === 'bend' && note.bendShape === 'up-return') return [[0, 0], [end / 2, note.bendCents ?? 200], [end, 0]];
   if (note.expression === 'bend' && note.bendShape === 'release') return [[0, 200], [end, 0]];
   const start = Math.max(slideEnd + Math.min(.18, note.length * .1), note.expression === 'bend' ? Math.min(.35, note.length * .22) : 1.1);
   points.push([start, 0]);
@@ -211,7 +211,7 @@ function editRiffSpan(bars, bar, step, pitch, offset, {end, cut, remove = false}
   return result;
 }
 
-function findRiffVoicing(pitches, previous) {
+function findRiffVoicing(pitches, previous, constraint = null) {
   let best;
   let bestCost = Infinity;
   const search = (index, firstString, voicing, stopped, cost) => {
@@ -226,6 +226,7 @@ function findRiffVoicing(pitches, previous) {
     for (let string = firstString; string <= tunings.length - (pitches.length - index); string++) {
       const fret = pitch - tunings[string];
       if (fret < 0 || fret > 22) continue;
+      if (constraint?.pitch === pitch && ((constraint.string !== undefined && constraint.string !== string) || (constraint.fretted && fret === 0))) continue;
       const fingers = fret ? [...stopped, fret] : stopped;
       if (fingers.length && Math.max(...fingers) - Math.min(...fingers) > 4) continue;
       const original = previous.some(([s, f]) => s === string && f === fret);
@@ -248,7 +249,7 @@ function editRiffPitch(bars, bar, step, pitch, articulation) {
     const next = notes.find(note => note.step > step);
     const length = hit?.length ?? Math.min((next?.step ?? stepsPerBar) - step, articulation === 'mute' ? 1.6 : 4);
     const voiceEdits = Object.fromEntries(Object.entries(hit?.voiceEdits ?? {}).filter(([key]) => Number(key) !== pitch));
-    notes.push({...hit, step, root: updated[0], length, articulation: hit?.articulation ?? articulation, voicing, voiceEdits});
+    notes.push({...hit, step, root: updated[0], length, articulation: hit?.articulation ?? articulation, voicing, voiceEdits, voiceTechniques: Object.fromEntries(Object.entries(hit?.voiceTechniques ?? {}).filter(([key]) => Number(key) !== pitch && updated.includes(Number(key))))});
     if (!hit) {
       const previous = bars[bar].findLast(note => note.step < step);
       if (previous) {
@@ -270,10 +271,10 @@ function editRiffPitch(bars, bar, step, pitch, articulation) {
 }
 
 function generatePolyRiff(config) {
-  const riff = generateGuitar({...config, mode: 'riff'});
+  const riff = generateGuitar({...config, mode: 'riff'}, 0, false);
   const scale = intervals(config.scale);
   let lastTop;
-  return riff.map((notes, bar) => notes.map((note, index) => {
+  return decorateRiff(riff.map((notes, bar) => notes.map((note, index) => {
     const rootString = note.root >= 45 ? 1 : 0;
     const rootFret = note.root - tunings[rootString];
     const frets = [...new Set([0, ...Array.from({length: 7}, (_, delta) => rootFret + delta - 3)])]
@@ -294,10 +295,10 @@ function generatePolyRiff(config) {
     const space = (notes[index + 1]?.step ?? stepsPerBar) - note.step;
     const articulation = index % 3 === 1 ? note.articulation : 'open';
     return {...note, articulation, voicing, length: articulation === 'open' ? Math.min(space - .18, 5.6) : note.length};
-  }));
+  })), config);
 }
 
-function generateGuitar(config, take = 0) {
+function generateGuitar(config, take = 0, decorate = true) {
   if (config.mode === 'melody') return makeLead(config, null, take);
   const style = styles[config.style];
   const scale = intervals(config.scale);
@@ -306,7 +307,7 @@ function generateGuitar(config, take = 0) {
   const motif = firstRhythm.map((_, index) => index === 0 ? 0 : pick(style.degrees));
   if (config.scale === 'phrygian' || config.scale === 'blues') motif[1] = config.scale === 'blues' ? 3 : 1;
   const progression = [0, pick(style.chords.slice(1)), 0, pick(style.chords.slice(1))];
-  return progression.map((degree, bar) => {
+  const bars = progression.map((degree, bar) => {
     const rhythm = bar % 2 === 0 ? firstRhythm : pick(style.rhythms);
     return rhythm.map((step, index) => {
       const last = index === rhythm.length - 1;
@@ -319,6 +320,7 @@ function generateGuitar(config, take = 0) {
       return {step, root: root + scale[tone], length, articulation, fifth};
     });
   });
+  return decorate ? decorateRiff(bars, config) : bars;
 }
 
 const melodyPhrases = {
@@ -461,4 +463,70 @@ function makeBass(config, guitar, drums, behavior = 'riff') {
       return {step,root,length:Math.min(gap-.15,config.style==='punk'?1.8:behavior==='root'?7.8:3.8),articulation:'single'};
     });
   });
+}
+
+const riffTechniqueNames = {normal:'Normal / ohne Technik',hammer:'Hammer-on',pull:'Pull-off','bend-half':'Halbton hoch & zurück','bend-whole':'Ganzton hoch & zurück'};
+const riffTechniqueSymbols = {hammer:'H',pull:'P','bend-half':'½↑↓','bend-whole':'1↑↓'};
+function riffPreviousVoice(bars, bar, step, pitch) {
+  const note = bars[bar]?.find(note => note.step === step);
+  const string = note && guitarFrets(note).find(([s,f]) => tunings[s]+f === pitch)?.[0];
+  if (string === undefined) return null;
+  return bars.flatMap((notes,b) => riffAttacks(notes).map(voice => ({...voice,position:b*16+voice.step})))
+    .filter(voice => voice.position < bar*16+step && guitarFrets(voice.note)[voice.index]?.[0] === string)
+    .sort((a,b) => b.position-a.position)[0] ?? null;
+}
+function setRiffTechnique(bars, bar, step, pitch, type) {
+  const note = bars[bar]?.find(note => note.step === step);
+  if (!note || !guitarPitches(note).includes(pitch) || !Object.hasOwn(riffTechniqueNames,type)) return null;
+  let technique = {type};
+  let voicing=guitarFrets(note);
+  if (type === 'hammer' || type === 'pull') {
+    const voices=bars.flatMap((notes,b)=>riffAttacks(notes).map(v=>({...v,position:b*16+v.step}))).filter(v=>v.position<bar*16+step).sort((a,b)=>b.position-a.position);
+    let previous;
+    const checked=new Set();
+    for(const voice of voices) {
+      const string=guitarFrets(voice.note)[voice.index][0];
+      if(checked.has(string)) continue;checked.add(string);
+      const interval=pitch-voice.pitch;
+      if(Math.abs(interval)>4 || (type==='hammer'?interval<=0:interval>=0)) continue;
+      const candidate=findRiffVoicing(guitarPitches(note).toSorted((a,b)=>a-b),voicing,{pitch,string});
+      if(candidate) {previous=voice;voicing=candidate;break;}
+    }
+    if(!previous) return null;
+    technique.from = previous.pitch;
+  }
+  if (type.startsWith('bend-') && voicing.find(([s,f]) => tunings[s]+f===pitch)?.[1] === 0) {
+    voicing=findRiffVoicing(guitarPitches(note).toSorted((a,b)=>a-b),voicing,{pitch,fretted:true});
+    if(!voicing) return null;
+  }
+  const techniques = {...note.voiceTechniques};
+  if (type === 'normal') delete techniques[pitch]; else techniques[pitch] = technique;
+  return bars.map((notes,b) => b===bar ? notes.map(other => other===note ? {...note,voicing,voiceTechniques:techniques} : other) : notes);
+}
+function riffVoiceNote(voice) {
+  const technique=voice.note.voiceTechniques?.[voice.pitch];
+  return {root:voice.pitch,length:voice.length,
+    transition:['hammer','pull'].includes(technique?.type)?technique.type:undefined,
+    from:technique?.from,expression:technique?.type.startsWith('bend-')?'bend':undefined,
+    bendShape:'up-return',bendCents:technique?.type==='bend-half'?100:200};
+}
+function sanitizeRiffTechniques(bars) {
+  let result=bars;
+  for(const [bar,notes] of bars.entries()) for(const note of notes) for(const [pitch,technique] of Object.entries(note.voiceTechniques??{})) {
+    if(!guitarPitches(note).includes(Number(pitch))) continue;
+    result=setRiffTechnique(result,bar,note.step,Number(pitch),technique.type) ?? setRiffTechnique(result,bar,note.step,Number(pitch),'normal');
+  }
+  return result;
+}
+function decorateRiff(bars,config) {
+  let result=bars;
+  const chance={stoner:.22,hard:.14,punk:.045}[config.style]??.14;
+  for(const [bar,notes] of bars.entries()) for(const note of notes) {
+    if(Math.random()>chance) continue;
+    const pitch=guitarPitches(note).at(-1), previous=riffPreviousVoice(result,bar,note.step,pitch);
+    const interval=previous?pitch-previous.pitch:0;
+    const type=interval>0&&interval<=4?'hammer':interval<0&&interval>=-4?'pull':Math.random()<.6?'bend-half':'bend-whole';
+    result=setRiffTechnique(result,bar,note.step,pitch,type)??result;
+  }
+  return result;
 }

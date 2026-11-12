@@ -45,10 +45,32 @@ function encodeMidi(pattern, only) {
         events.push({tick: 0, order: 0, bytes: [0xb0 + channel, control, value]});
       }
     }
+    const independent = bars.some(notes=>notes.some(note=>Object.keys(note.voiceTechniques??{}).length));
+    if(independent) for(let ch=3;ch<=8;ch++) {
+      events.push({tick:0,order:0,bytes:[0xc0+ch,patch]});
+      for(const [cc,value] of [[101,0],[100,0],[6,slideRange],[38,0],[101,127],[100,127]]) events.push({tick:0,order:0,bytes:[0xb0+ch,cc,value]});
+    }
     bars.forEach((notes, bar) => {
-      for (const {step, pitch, length, index} of riffAttacks(notes.filter(note => note.articulation !== 'single'))) {
+      for (const voice of riffAttacks(notes.filter(note => note.articulation !== 'single'))) {
+        const {step,pitch,length,index,note}=voice;
         const start = (bar * stepsPerBar + step) * ticksPerStep;
-        addNote(events, channel, pitch, (step === 0 ? 107 : 92) - index * 10, start, start + Math.round(length * ticksPerStep));
+        const ch=independent?3+guitarFrets(note)[index][0]:channel;
+        const performed=riffVoiceNote(voice), end=start+Math.round(length*ticksPerStep);
+        addNote(events,ch,pitch,(performed.transition?76:step===0?107:92)-index*10,start,end);
+        if(performed.transition) {
+          events.push({tick:start,order:1.5,bytes:[0xb0+ch,68,127]},{tick:end,order:1,bytes:[0xb0+ch,68,0]});
+        }
+        const curve=leadPitchCurve(performed,15/pattern.tempo);
+        if(curve.length) {
+          const points=[];
+          curve.forEach(([step,cents],i)=>{
+            const previous=curve[i-1];
+            if(previous) {const count=Math.ceil((step-previous[0])/.18);for(let j=1;j<count;j++)points.push([previous[0]+(step-previous[0])*j/count,previous[1]+(cents-previous[1])*j/count]);}
+            points.push([step,cents]);
+          });
+          for(const [step,cents] of points) {const value=Math.round(8192+8191*cents/(slideRange*100));events.push({tick:start+Math.round(step*ticksPerStep),order:1.5,bytes:[0xe0+ch,value&127,value>>7]});}
+          events.push({tick:end,order:1.2,bytes:[0xe0+ch,0,64]});
+        }
       }
       for (const note of notes.filter(note => note.articulation === 'single')) {
         const start = (bar * stepsPerBar + note.step) * ticksPerStep;

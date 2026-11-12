@@ -58,6 +58,15 @@ function projectNotes(value, count, single, nullable = false, minPitch = 38, max
           return [string, projectNumber(pair[1], 0, 22, true)];
         });
       }
+      if (note.voiceTechniques !== undefined) {
+        projectCheck(!single && note.voiceTechniques && typeof note.voiceTechniques==='object' && !Array.isArray(note.voiceTechniques));
+        const entries=Object.entries(note.voiceTechniques);projectCheck(entries.length<=6);
+        result.voiceTechniques=Object.fromEntries(entries.map(([pitch,t])=>{
+          projectCheck(String(Number(pitch))===pitch && guitarPitches(result).includes(Number(pitch)) && t && typeof t==='object');
+          const type=projectChoice(t.type,['hammer','pull','bend-half','bend-whole']);
+          return [pitch,{type,...(['hammer','pull'].includes(type)?{from:projectNumber(t.from,38,86,true)}:{})}];
+        }));
+      }
       if (note.voiceEdits !== undefined) {
         projectCheck(note.voiceEdits && typeof note.voiceEdits === 'object' && !Array.isArray(note.voiceEdits));
         const entries = Object.entries(note.voiceEdits);
