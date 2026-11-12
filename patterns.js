@@ -286,6 +286,7 @@ function generatePolyRiff(config) {
 
 function generateGuitar(config, take = 0, decorate = true) {
   if (config.mode === 'melody') return makeLead(config, null, take);
+  if(config.style==='stoner') return makeStonerRiff(config,decorate);
   const style = styles[config.style];
   const scale = intervals(config.scale);
   const root = tonic(config.key);
@@ -336,6 +337,7 @@ const melodyPhrases = {
 };
 
 function makeLead(config, riff, take = 0) {
+  if(config.style==='stoner') return makeStonerLead(config,riff,take);
   const home = tonic(config.key);
   const scale = intervals(config.scale);
   const style = config.melodyStyle ?? 'stoner';
@@ -389,6 +391,7 @@ function makeLead(config, riff, take = 0) {
 }
 
 function makeGroove(config, guitar, variation, fresh = false) {
+  if(config.style==='stoner') return makeStonerDrums(config,guitar,variation);
   const style = styles[config.style];
   const classicKicks = [
     [[0, 6, 8, 14], [0, 6, 9, 14], [0, 6, 8, 14], [0, 7, 10]],
@@ -434,6 +437,7 @@ function bassPitches(config) {
 }
 
 function makeBass(config, guitar, drums, behavior = 'riff') {
+  if(config.style==='stoner') return makeStonerBass(config,guitar,drums,behavior);
   const pitches = bassPitches(config);
   const nearest = target => pitches.reduce((best,pitch)=>Math.abs(pitch-target)<Math.abs(best-target)?pitch:best);
   const home = 26 + (config.key + 10) % 12;
@@ -588,15 +592,6 @@ function vocalPitches(config,range='mid') {
   const {min,max}=vocalRanges[range]??vocalRanges.mid;
   return Array.from({length:max-min+1},(_,i)=>min+i).filter(pitch=>intervals(config.scale).includes((pitch-config.key+120)%12));
 }
-function makeVocal(config,riff,drums,range='mid') {
-  const pitches=vocalPitches(config,range),home=pitches.filter(pitch=>pitch%12===config.key).reduce((best,pitch)=>Math.abs(pitch-60)<Math.abs(best-60)?pitch:best,pitches[0]);
-  const at=pitches.indexOf(home),motif=[0,2,1,0,3,2,1,0];
-  return riff.map((notes,bar)=>{
-    const rhythm=config.style==='punk'?[0,4,8,12]:bar%4===3?[2,9]:[0,8];
-    return rhythm.map((step,index)=>{
-      const offset=motif[(bar*2+index)%motif.length],root=pitches[Math.max(0,Math.min(pitches.length-1,at+offset))];
-      const available=(rhythm[index+1]??16)-step;
-      return {step,root,length:Math.min(config.style==='punk'?2.6:bar%4===3?4:6,available-.6),articulation:'single'};
-    });
-  });
+function makeVocal(config,riff,drums,range='mid',previous=null) {
+  return makeFreshVocal(config,riff,drums,range,previous);
 }

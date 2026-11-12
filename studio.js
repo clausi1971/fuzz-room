@@ -5,7 +5,7 @@ const playButton = get('play');
 const timeline = get('timeline');
 const grooveNames = ['Grundgroove', 'Offene Hi-Hat', 'Halftime'];
 const presetNames = ['Palm Mute', 'Offene Akkorde'];
-const config = {style: 'stoner', melodyStyle: 'desert', key: 4, scale: 'minor', tempo: 90, mode: 'riff'};
+const config = {style: 'stoner', stonerStyle:'classic', melodyStyle: 'desert', key: 4, scale: 'minor', tempo: 90, mode: 'riff'};
 const opening = originalGuitar(0, config);
 let selected = {...config, guitar: opening, drums: makeGroove(config, opening, 0), lead: null, bass: null, vocal: null};
 let guitarName = presetNames[0];
@@ -194,6 +194,7 @@ function openSection(id, {skipSave = false} = {}) {
     bassName = meta.bassName ?? 'Optional'; bassStyle = meta.bassStyle ?? 'riff';
     vocalName=meta.vocalName??'Optional';vocalRange=meta.vocalRange??'mid';
     config.style = meta.style; config.melodyStyle = meta.melodyStyle;
+    config.stonerStyle=meta.stonerStyle??part.pattern.stonerStyle??'classic';
     get('mute-lead').checked = meta.muteLead;
   }
   for (const field of ['key', 'scale', 'tempo', 'mode']) config[field] = part.pattern[field];
@@ -567,6 +568,7 @@ function commitRiff(guitar, {fromChat = false} = {}) {
 }
 
 function renderControls() {
+  renderStonerChoice();
   renderRiffGenerationOptions();
   const guitarLocked = get('lock-guitar').checked;
   const drumsLocked = get('lock-drums').checked;
@@ -723,7 +725,7 @@ function chatTrackContext(part) {
     bass: part !== 'bass' && part !== 'arrangement' ? selected.bass : null,
     riff: ['drums', 'melody', 'section', 'bass', 'vocal'].includes(part) && selected.mode === 'riff' ? selected.guitar : null,
     drums: ['riff', 'melody', 'section', 'bass', 'vocal'].includes(part) ? selected.drums : null,
-    musicStyle: config.style,
+    musicStyle: config.style,stonerStyle:config.stonerStyle,
     riffTechniques: riffTechniqueProfiles[config.style],
     melody: ['riff', 'drums', 'section', 'bass', 'vocal'].includes(part) ? (selected.mode === 'melody' ? selected.guitar : selected.lead) : null};
 }
@@ -734,8 +736,8 @@ function chatStyleName(context) {
 }
 
 function chatTrackPrompt(context, description) {
-  if (context.part === 'bass') return chatBassPrompt(context, description);
-  if(context.part==='vocal') return chatVocalPrompt(context,description);
+  if (context.part === 'bass') return chatBassPrompt(context, description)+stonerPromptGuidance(context);
+  if(context.part==='vocal') return chatVocalPrompt(context,description)+stonerPromptGuidance(context);
   const count = context.bars;
   const steps = count * stepsPerBar;
   let prompt = buildChatTrackPrompt(context.part === 'section' ? {...context, part: 'arrangement'} : context, description)
@@ -755,6 +757,7 @@ function chatTrackPrompt(context, description) {
     prompt += '\nVERBINDLICHE RIFF-AUSWAHL für diesen Musikstil: Erlaubt: '+allowed+'. Ausgeschlossen: '+(excluded||'keine')+'. Verwende ausschließlich erlaubte Spielweisen und Techniken. Diese Auswahl gilt für das neu komponierte Riff, nicht für die Begleitspuren. Häufigkeit automatisch und sparsam an den Stil anpassen: Stoner Rock bevorzugt offene, ausklingende Stimmen und Bendings, Hard Rock abwechslungsreiche Hammer-ons/Pull-offs und gezielte Bendings, Punk überwiegend kurze direkte Anschläge und wenig Verzierungen – jeweils nur soweit erlaubt. Bei ausgeschalteten ausklingenden Begleittönen endet jeder Riffton vor dem nächsten Anschlag. Ausgeschlossene Techniken auch dann nicht verwenden, wenn sie in einer Vorlage oder im JSON-Beispiel vorkommen.';
   }
   if(['arrangement','section'].includes(context.part)&&context.hasVocal) prompt+='\nKomponiere zusätzlich eine Gesangsmelodie als vocal:{notes:[{step:0,pitch:'+vocalPitches(context,context.vocalRange)[0]+',duration:4}]}. '+vocalPromptRules(context);
+  prompt+=stonerPromptGuidance(context);
   if (context.part !== 'section') return prompt;
   prompt = prompt.replace('und am Ende zum Loop zurückführen.', 'und am Ende zum folgenden Songteil überleiten. Beim Outro darf der Schluss ausklingen.');
   const source = {
@@ -1036,7 +1039,7 @@ function importChatTrack(event) {
 }
 
 function comparisonMeta() {
-  return {guitarName, grooveName, preset, polyphonicRiff, melodyEdited, mode: config.mode, bassName, bassStyle, vocalName,vocalRange, muteLead: get('mute-lead').checked};
+  return {guitarName, grooveName, preset, polyphonicRiff, melodyEdited, mode: config.mode,stonerStyle:config.stonerStyle, bassName, bassStyle, vocalName,vocalRange, muteLead: get('mute-lead').checked};
 }
 
 function renderComparison() {
@@ -1334,9 +1337,9 @@ function setNewGuitar() {
   if (config.mode === 'melody') melodyEdited = false;
   if (polyphonicRiff && config.mode === 'riff') {
     guitarName = 'Mehrstimmiges Riff';
-    return generatePolyRiff(config);
+    return generatePolyRiff({...config,bars:selected.guitar.length});
   }
-  return generateGuitar(config, leadTake);
+  return generateGuitar({...config,bars:selected.guitar.length}, leadTake);
 }
 
 playButton.addEventListener('click', () => togglePlayback());
@@ -2000,7 +2003,7 @@ function readChatVocal(value,context) {
   return bars;
 }
 get('toggle-vocal').addEventListener('click',()=>commitVocal(selected.vocal?null:makeVocal(config,selected.guitar,selected.drums,vocalRange),'Passend zum Arrangement'));
-get('new-vocal').addEventListener('click',()=>commitVocal(makeVocal(config,selected.guitar,selected.drums,vocalRange),'Neue Gesangsmelodie'));
+get('new-vocal').addEventListener('click',()=>commitVocal(makeVocal(config,selected.guitar,selected.drums,vocalRange,selected.vocal),'Neue Gesangsmelodie'));
 get('header-ai-vocal').addEventListener('click',()=>get('open-ai-vocal').click());
 get('vocal-bar-picker').addEventListener('click',event=>{const button=event.target.closest('button[data-bar]');if(button){vocalBar=Number(button.dataset.bar);renderVocalGrid();renderGridPosition();}});
 get('vocal-grid').addEventListener('click',event=>{
@@ -2014,3 +2017,14 @@ bindNoteGrid({id:'vocal-grid',source:()=>selected.vocal,render:renderVocalGrid,c
 get('vocal-range').addEventListener('change',()=>{vocalRange=get('vocal-range').value;saveSection();renderVocalGrid();});
 get('ai-vocal-range').addEventListener('change',()=>{get('ai-response').value='';get('ai-prompt-preview').hidden=true;aiPromptContext=null;get('ai-dialog-status').textContent='Stimmlage geändert. Kopiere eine neue Anfrage.';});
 renderVocalGrid();
+
+function renderStonerChoice() {
+  get('stoner-options').hidden=config.style!=='stoner';
+  get('stoner-style').value=config.stonerStyle??'classic';
+  get('stoner-description').textContent=stonerProfile(config).description+' Wirkt auf neue Vorschläge aller fünf Spuren und ChatGPT. Tempo und vorhandene Noten bleiben erhalten.';
+}
+get('stoner-style').addEventListener('change',()=>{
+  config.stonerStyle=get('stoner-style').value;
+  selected={...selected,stonerStyle:config.stonerStyle};
+  saveSection();renderStonerChoice();
+});

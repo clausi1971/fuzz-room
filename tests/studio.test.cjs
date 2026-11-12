@@ -336,3 +336,33 @@ test('whole song parts include vocals and keep range and voice history independe
  assert.deepEqual([...visited],[0,1]);assert.ok(a.run('sung.includes(67)'));assert.equal(a.run('playback'),null);
  a.run('openSection(1)');assert.equal(a.run('selected.vocal.length'),4);assert.equal(a.run('vocalBar'),-1);
 });
+
+test('new vocal proposals change notes, rhythms, lengths and breaths instead of repeating a fixed sequence',()=>{
+ const a=app();a.fire('toggle-vocal');const signatures=new Set(),tones=new Set(),rhythms=new Set(),lengths=new Set();
+ for(let i=0;i<16;i++){a.fire('new-vocal');const bars=a.plain(a.run('selected.vocal'));signatures.add(JSON.stringify(bars));tones.add(JSON.stringify(bars.map(notes=>notes.map(note=>note.root))));rhythms.add(JSON.stringify(bars.map(notes=>notes.map(note=>note.step))));lengths.add(JSON.stringify(bars.map(notes=>notes.map(note=>note.length))));}
+ assert.equal(signatures.size,16);assert.ok(tones.size>=10);assert.ok(rhythms.size>=10);assert.ok(lengths.size>=10);
+ a.run('Math.random=()=>0');const constant=new Set();for(let i=0;i<10;i++){a.fire('new-vocal');constant.add(a.run('JSON.stringify(selected.vocal)'));}assert.equal(constant.size,10);
+});
+
+test('Stoner substyle changes only future generation and survives saved and legacy arrangements',()=>{
+ const a=app();a.fire('toggle-bass');a.fire('toggle-vocal');a.fire('toggle-lead');const before=a.run('selected');a.choose('stoner-style','doom');
+ for(const field of ['guitar','drums','lead','bass','vocal'])assert.strictEqual(a.run('selected.'+field),before[field]);assert.equal(a.run('selected.tempo'),90);
+ a.context.file=a.run('createArrangement()');a.run('config.stonerStyle="classic";loadArrangement(readArrangement(file))');assert.equal(a.run('config.stonerStyle'),'doom');assert.equal(a.get('stoner-style').value,'doom');
+ const old=JSON.parse(a.context.file);for(const part of old.parts){delete part.pattern.stonerStyle;delete part.meta.stonerStyle;}a.context.old=old;a.run('loadArrangement(readArrangement(JSON.stringify(old)))');assert.equal(a.run('config.stonerStyle'),'classic');
+ for(const part of ['riff','drums','melody','bass','vocal','arrangement','section']){a.choose('stoner-style','psych');assert.match(a.run(`chatTrackPrompt(chatTrackContext('${part}'),'')`),/Psych Stoner/);}
+});
+
+test('all five Stoner generators cover substyles, keys, scales and long parts with valid MIDI and note data',()=>{
+ const a=app();a.run(`for(const stonerStyle of Object.keys(stonerProfiles))for(const key of [0,4,6,9])for(const scale of Object.keys(scales))for(const count of [4,8,16]){
+ const c={...config,stonerStyle,key,scale,bars:count},guitar=generateGuitar(c),drums=makeGroove(c,guitar,0),lead=makeLead(c,guitar),bass=makeBass(c,guitar,drums,'independent'),vocal=makeVocal(c,guitar,drums,'mid');
+ if(guitar.length!==count||drums.length!==count||lead.length!==count||bass.length!==count||vocal.length!==count)throw Error('Wrong bar count');
+ projectNotes(guitar,count,false);projectDrums(drums,count);projectNotes(lead,count,true);projectNotes(bass,count,true,false,26,55);projectNotes(vocal,count,true,false,45,77);
+ for(const [bars,pitches] of [[lead,melodyPitches(c,true)],[bass,bassPitches(c)],[vocal,vocalPitches(c,'mid')]]){let end=-1,previous;for(const [bar,notes] of bars.entries())for(const note of notes){if(!pitches.includes(note.root)||bar*16+note.step<end)throw Error('Out of key or overlapping');if(bars===vocal&&previous!==undefined&&Math.abs(note.root-previous)>7)throw Error('Unsuitable vocal jump');end=bar*16+note.step+note.length;previous=note.root;}}
+ const bytes=encodeMidi({...c,guitar,drums,lead,bass,vocal});if(!bytes||bytes.length<100)throw Error('Invalid MIDI');
+ }`);
+});
+
+test('Stoner substyles differ in density and every track offers fresh structures',()=>{
+ const a=app();const stats=a.plain(a.run(`(()=>{const stats={};for(const stonerStyle of ['desert','doom']){stats[stonerStyle]={riff:0,vocal:0};for(let i=0;i<24;i++){const c={...config,stonerStyle},riff=generateGuitar(c),drums=makeGroove(c,riff,0);stats[stonerStyle].riff+=riff.flat().length;stats[stonerStyle].vocal+=makeVocal(c,riff,drums).flat().length;}}return stats;})()`));assert.ok(stats.desert.riff>stats.doom.riff);assert.ok(stats.desert.vocal>stats.doom.vocal);
+ for(const profile of ['classic','desert','doom','psych']){a.choose('stoner-style',profile);const results=a.plain(a.run(`(()=>{const sets=Array.from({length:5},()=>new Set());for(let i=0;i<8;i++){const riff=generateGuitar(config),drums=makeGroove(config,selected.guitar,0),bass=makeBass(config,selected.guitar,selected.drums,'root'),lead=makeLead(config,selected.guitar),vocal=makeVocal(config,selected.guitar,selected.drums);[riff,drums,bass,lead,vocal].forEach((bars,i)=>sets[i].add(JSON.stringify(bars)));}return sets.map(set=>set.size);})()`));assert.deepEqual(results,[8,8,8,8,8]);}
+});

@@ -142,14 +142,14 @@ function readArrangement(text) {
     projectCheck(p && meta);
     const count = projectChoice(p.guitar?.length, [4, 8, 16]);
     const mode = projectChoice(p.mode, ['riff', 'melody']);
-    const pattern = {style: projectChoice(p.style, ['stoner', 'punk', 'hard']),
+    const pattern = {style: projectChoice(p.style, ['stoner', 'punk', 'hard']),stonerStyle:projectChoice(p.stonerStyle??'classic',Object.keys(stonerProfiles)),
       melodyStyle: projectChoice(p.melodyStyle, ['desert', 'psych', 'stoner', 'blues']),
       key: projectNumber(p.key, 0, 11, true), scale: projectChoice(p.scale, Object.keys(scales)),
       tempo: projectNumber(p.tempo, 55, 210, true), mode,
       guitar: projectNotes(p.guitar, count, mode === 'melody'), drums: projectDrums(p.drums, count),
       lead: projectNotes(p.lead, count, true, true), bass: projectNotes(p.bass ?? null,count,true,true,26,55),vocal:projectNotes(p.vocal??null,count,true,true,45,77)};
     const details = {...projectDetails(meta, 'guitar'), ...projectDetails(meta, 'drums'), ...projectDetails(meta, 'lead'), ...projectDetails(meta, 'bass'),...projectDetails(meta,'vocal'),
-      style: projectChoice(meta.style, ['stoner', 'punk', 'hard']),
+      style: projectChoice(meta.style, ['stoner', 'punk', 'hard']),stonerStyle:projectChoice(meta.stonerStyle??pattern.stonerStyle,Object.keys(stonerProfiles)),
       melodyStyle: projectChoice(meta.melodyStyle, ['desert', 'psych', 'stoner', 'blues']), muteLead: Boolean(meta.muteLead)};
     projectCheck(details.mode === mode);
     const history = Object.fromEntries(['guitar', 'drums', 'lead', 'bass', 'vocal'].map(field => {
