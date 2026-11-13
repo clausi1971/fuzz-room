@@ -31,3 +31,5 @@ Tests: node --test tests/*.test.cjs
 ## GitHub Pages
 
 Statische Dateien im Hauptverzeichnis, Branch main, Pages-Ordner / (root), kein Build erforderlich. Version 2 ersetzt die bisherige Webseite; Version 1 bleibt in der Git-Historie erhalten. Quellen und eigene Kompositionsregeln sind im Ordner docs dokumentiert.
+
+Gesang startet mit neutralem Orientierungston und 100 % Spurlautstärke. Orientierungston: dreifacher Signalpegel; Ah-Stimme: doppelter Signalpegel. Gespeicherte Klang- und Lautstärkewerte bleiben beim Import erhalten.

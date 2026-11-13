@@ -3,6 +3,7 @@
 class LoopSound {
   constructor() {
     this.context = new AudioContext();
+    this.vocalTone = 'guide';
     this.cache = new Map();
     this.voices = new Set();
     const ctx = this.context;
@@ -177,14 +178,14 @@ class LoopSound {
     for(const [name,gate] of Object.entries(this.leadToneGates))gate.gain.setTargetAtTime(name===tone?1:0,this.context.currentTime,.025);
   }
 
-  setVocalTone(tone='ah'){this.vocalTone=tone==='guide'?'guide':'ah';}
+  setVocalTone(tone='guide'){this.vocalTone=tone==='guide'?'guide':'ah';}
 
   vocal(time,note,stepDuration) {
     const ctx=this.context,length=note.length*stepDuration;
     const oscillator=ctx.createOscillator();oscillator.type=this.vocalTone==='guide'?'triangle':'sawtooth';oscillator.frequency.value=440*2**((note.root-69)/12);
-    const envelope=ctx.createGain(),attack=Math.min(.07,length*.2),release=Math.min(.14,length*.3);
-    envelope.gain.setValueAtTime(0,time);envelope.gain.linearRampToValueAtTime(.09,time+attack);
-    envelope.gain.setValueAtTime(.09,time+length-release);envelope.gain.linearRampToValueAtTime(0,time+length);
+    const envelope=ctx.createGain(),attack=Math.min(.07,length*.2),release=Math.min(.14,length*.3),level=this.vocalTone==='guide'?.27:.18;
+    envelope.gain.setValueAtTime(0,time);envelope.gain.linearRampToValueAtTime(level,time+attack);
+    envelope.gain.setValueAtTime(level,time+length-release);envelope.gain.linearRampToValueAtTime(0,time+length);
     envelope.connect(this.vocalLevel);
     if(this.vocalTone==='guide'){
       oscillator.connect(envelope);this.trackVoice(oscillator);oscillator.start(time);oscillator.stop(time+length+.02);return;

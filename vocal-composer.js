@@ -8,7 +8,7 @@ const vocalStyleProfiles={
   numetal:{weights:{arc:2,hook:4,speech:5,answer:3},breath:4,description:'Nu Metal: rhythmisch markante, sprechnahe Figuren im Wechsel mit melodischen Hooks und bewussten Pausen.'},
   korn:{weights:{arc:4,hook:3,speech:5,answer:4},breath:4,description:'Korn-inspiriert: Wechsel zwischen sprechnaher Rhythmik und dunklen singbaren Bögen. Eigene Motive mit Platz für das Arrangement.'},
 };
-function defaultVocalOptions(){return {blocks:Object.keys(vocalPhraseBlocks),sound:'ah'};}
+function defaultVocalOptions(){return {blocks:Object.keys(vocalPhraseBlocks),sound:'guide'};}
 function readVocalOptions(value){
   if(value===undefined)return defaultVocalOptions();
   const {blocks,sound}=value??{};
@@ -71,7 +71,7 @@ function vocalBlocksPrompt(settings,style){
 }
 function currentVocalTone(){
   const part=playback?.song?.[playback.songIndex];
-  return part&&part.id!==activeSection?part.meta?.composeSettings?.vocal?.vocal?.sound??'ah':composeSettings.vocal.vocal.sound;
+  return part&&part.id!==activeSection?part.meta?.composeSettings?.vocal?.vocal?.sound??'guide':composeSettings.vocal.vocal.sound;
 }
 function renderVocalBlocks(){
   const p=composeSettings.vocal.vocal;get('vocal-sound').value=p.sound;

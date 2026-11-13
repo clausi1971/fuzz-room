@@ -170,7 +170,7 @@ function readArrangement(text) {
     return {id, name: projectText(part.name, 60), type: projectText(part.type, 60), pattern, meta: details, history};
   });
   projectCheck(ids.has(value.activeSection));
-  const levels = Object.fromEntries(mixerChannels.map(channel => [channel, projectNumber(value.mixer?.levels?.[channel] ?? (channel==='vocal-volume'?80:channel==='bass-volume' && value.version===1?100:undefined), 0, 100)]));
+  const levels = Object.fromEntries(mixerChannels.map(channel => [channel, projectNumber(value.mixer?.levels?.[channel] ?? (channel==='vocal-volume'?100:channel==='bass-volume' && value.version===1?100:undefined), 0, 100)]));
   projectCheck(Array.isArray(value.mixer?.mutes) && value.mixer.mutes.every(channel => mixerChannels.includes(channel) && channel !== 'lead-volume'));
   const guides = Object.fromEntries(['riff', 'melody'].map(track => [track,
     Object.fromEntries(['snare', 'kick'].map(kind => [kind, Boolean(value.view?.guides?.[track]?.[kind])]))]));
