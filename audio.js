@@ -37,13 +37,14 @@ class LoopSound {
     this.vocalLevel.connect(this.master);
     this.bassLevel = ctx.createGain();
     this.bassLevel.connect(this.master);
-    this.bassInput = this.filter('highpass', 28);
+    this.bassInput = this.filter('highpass', 22);
     const bassDrive = ctx.createWaveShaper();
     bassDrive.curve = Float32Array.from({length:4097},(_,i)=>Math.tanh((i/2048-1)*2.2));
     bassDrive.oversample = '2x';
     const bassOutput = ctx.createGain();
     bassOutput.gain.value = .58;
-    this.bassInput.connect(bassDrive).connect(this.filter('lowpass',1500)).connect(bassOutput).connect(this.bassLevel);
+    const bassBody=this.filter('peaking',110,.7);bassBody.gain.value=2;
+    this.bassInput.connect(bassDrive).connect(bassBody).connect(this.filter('lowpass',1250)).connect(bassOutput).connect(this.bassLevel);
 
     this.guitars = [-.9, .9].map(pan => {
       const input = this.filter('highpass', 65);
@@ -61,18 +62,25 @@ class LoopSound {
       return input;
     });
 
-    this.leadInput = this.filter('highpass', 95);
-    const leadDrive = ctx.createWaveShaper();
-    leadDrive.curve = Float32Array.from({length: 4097}, (_, i) => Math.tanh((i / 2048 - 1) * 4.8 + .16) - Math.tanh(.16));
-    leadDrive.oversample = '2x';
-    const leadLevel = ctx.createGain();
-    leadLevel.gain.value = .28;
     this.leadLevel = ctx.createGain();
     this.leadLevel.connect(this.master);
-    const leadBody = this.filter('peaking', 850, .8);
-    leadBody.gain.value = 4.5;
-    const pickPresence=this.filter('peaking',2200,1.1);pickPresence.gain.value=2;
-    this.leadInput.connect(leadDrive).connect(this.filter('highpass', 95)).connect(leadBody).connect(pickPresence).connect(this.filter('lowpass', 3200)).connect(leadLevel).connect(this.leadLevel);
+    // Two slightly different performances, narrower than the riff's ±0.9 panorama.
+    this.leadInputs=[this.filter('highpass',65),this.filter('highpass',65)];
+    this.leadInput=this.leadInputs[0];
+    this.leadTone='riff';
+    this.leadToneGates=Object.fromEntries(['riff','dark'].map(tone=>{
+      const gate=ctx.createGain();gate.gain.value=tone==='riff'?1:0;gate.connect(this.leadLevel);
+      this.leadInputs.forEach((input,side)=>{
+        const fuzz=ctx.createWaveShaper(),amount=tone==='riff'?9.5:14;
+        fuzz.curve=Float32Array.from({length:4097},(_,i)=>Math.tanh((i/2048-1)*amount+.18)-Math.tanh(.18));fuzz.oversample='2x';
+        const body=this.filter('peaking',tone==='riff'?620:440,.8);body.gain.value=tone==='riff'?3:5;
+        const cab=this.filter('lowpass',tone==='riff'?(side?2850:2450):(side?2200:1900),.8);
+        const level=ctx.createGain();level.gain.value=tone==='riff'?.15:.14;
+        const pan=ctx.createStereoPanner();pan.pan.value=side?.42:-.42;
+        input.connect(fuzz).connect(this.filter('highpass',55)).connect(body).connect(cab).connect(level).connect(pan).connect(gate);
+      });
+      return [tone,gate];
+    }));
     this.leadSustainWave = ctx.createPeriodicWave(new Float32Array(6), Float32Array.of(0, .74, .38, .22, .12, .055));
   }
 
@@ -149,29 +157,38 @@ class LoopSound {
   lead(time, note, stepDuration) {
     const legato = Boolean(note.transition);
     const length = note.length * stepDuration;
-    const buffer = this.string(note.root, false, 0);
-    const source = this.voice(buffer, time, length, legato ? .71 : .79, this.leadInput, legato);
-    const sustain = length > 1.7 ? this.sustainString(time, note.root, length, this.leadInput, 0, .035) : null;
-    if(!legato) {
-      const pick=this.sample('lead-pick',.025,(data,rate)=>{let last=0;for(let i=0;i<data.length;i++){const noise=Math.random()*2-1;data[i]=(noise-last)*Math.exp(-i/(rate*.004));last=noise;}});
-      this.voice(pick,time,.025,.055,this.leadInput);
-    }
     const curve = leadPitchCurve(note, stepDuration);
-    for (const voice of sustain ? [source, sustain] : [source]) {
+    for(let side=0;side<2;side++){
+      const start=time+(side?.007:0),input=this.leadInputs[side];
+      const source=this.voice(this.string(note.root,false,side),start,length,legato?.71:.79,input,legato);
+      const sustain=length>1.7?this.sustainString(start,note.root,length,input,side,.07):null;
+      for (const voice of sustain ? [source, sustain] : [source]) {
       for (const [step, cents] of curve) {
-        if (step === 0) voice.detune.setValueAtTime(cents, time);
-        else voice.detune.linearRampToValueAtTime(cents, time + step * stepDuration);
+        if (step === 0) voice.detune.setValueAtTime(cents, start);
+        else voice.detune.linearRampToValueAtTime(cents, start + step * stepDuration);
+      }
       }
     }
   }
 
+  setLeadTone(tone='riff'){
+    if(!this.leadToneGates[tone]||this.leadTone===tone)return;
+    this.leadTone=tone;
+    for(const [name,gate] of Object.entries(this.leadToneGates))gate.gain.setTargetAtTime(name===tone?1:0,this.context.currentTime,.025);
+  }
+
+  setVocalTone(tone='ah'){this.vocalTone=tone==='guide'?'guide':'ah';}
+
   vocal(time,note,stepDuration) {
     const ctx=this.context,length=note.length*stepDuration;
-    const oscillator=ctx.createOscillator();oscillator.type='sawtooth';oscillator.frequency.value=440*2**((note.root-69)/12);
+    const oscillator=ctx.createOscillator();oscillator.type=this.vocalTone==='guide'?'triangle':'sawtooth';oscillator.frequency.value=440*2**((note.root-69)/12);
     const envelope=ctx.createGain(),attack=Math.min(.07,length*.2),release=Math.min(.14,length*.3);
     envelope.gain.setValueAtTime(0,time);envelope.gain.linearRampToValueAtTime(.09,time+attack);
     envelope.gain.setValueAtTime(.09,time+length-release);envelope.gain.linearRampToValueAtTime(0,time+length);
     envelope.connect(this.vocalLevel);
+    if(this.vocalTone==='guide'){
+      oscillator.connect(envelope);this.trackVoice(oscillator);oscillator.start(time);oscillator.stop(time+length+.02);return;
+    }
     for(const [frequency,level] of [[800,1],[1150,.6],[2900,.25]]) {
       const formant=this.filter('bandpass',frequency,7),gain=ctx.createGain();gain.gain.value=level;
       oscillator.connect(formant).connect(gain).connect(envelope);

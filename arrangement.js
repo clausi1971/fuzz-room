@@ -35,11 +35,13 @@ function projectNotes(value, count, single, nullable = false, minPitch = 38, max
       const step = projectNumber(note.step, 0, 15, true);
       projectCheck(!positions.has(step)); positions.add(step);
       const articulation = projectChoice(note.articulation, single ? ['single'] : ['open', 'mute']);
-      const result = {step, root: projectNumber(note.root, minPitch, maxPitch, true),
+      const tuning=projectChoice(note.tuning??'dropd',Object.keys(guitarTunings)),openStrings=guitarTunings[tuning].notes;
+      const result = {...(note.tuning!==undefined?{tuning}:{}),step, root: projectNumber(note.root,!single&&tuning==='a7'?33:minPitch, maxPitch, true),
         length: projectNumber(note.length, .001, single ? count * 16 - bar * 16 - step : 16 - step), articulation};
+      if(note.bassTuning!==undefined){projectCheck(single);result.bassTuning=projectChoice(note.bassTuning,Object.keys(bassTunings));projectCheck(result.root>=bassTunings[result.bassTuning].notes[0]);}
       if (note.fifth !== undefined) result.fifth = projectNumber(note.fifth, 0, 24, true);
-      if (note.transition !== undefined) result.transition = projectChoice(note.transition, ['slide', 'hammer']);
-      if (note.from !== undefined) result.from = projectNumber(note.from, 38, 86, true);
+      if (note.transition !== undefined) result.transition = projectChoice(note.transition, ['slide', 'hammer','pull']);
+      if (note.from !== undefined) result.from = projectNumber(note.from, minPitch, maxPitch, true);
       if (result.transition === 'slide') projectCheck(result.from !== undefined);
       if (note.expression !== undefined) result.expression = projectChoice(note.expression, ['bend', 'vibrato']);
       if (note.bendCents !== undefined) result.bendCents = projectNumber(note.bendCents, 0, 1200);
@@ -49,18 +51,18 @@ function projectNotes(value, count, single, nullable = false, minPitch = 38, max
         projectCheck(result.expression === 'bend' && result.bendCents === 200);
       }
       if (note.voicing !== undefined) {
-        projectCheck(Array.isArray(note.voicing) && note.voicing.length > 0 && note.voicing.length <= 6);
+        projectCheck(Array.isArray(note.voicing) && note.voicing.length > 0 && note.voicing.length <= openStrings.length);
         const strings = new Set();
         result.voicing = note.voicing.map(pair => {
           projectCheck(Array.isArray(pair) && pair.length === 2);
-          const string = projectNumber(pair[0], 0, 5, true);
+          const string = projectNumber(pair[0], 0, openStrings.length-1, true);
           projectCheck(!strings.has(string)); strings.add(string);
           return [string, projectNumber(pair[1], 0, 22, true)];
         });
       }
       if(note.voiceArticulations!==undefined) {
         projectCheck(!single&&note.voiceArticulations&&typeof note.voiceArticulations==='object'&&!Array.isArray(note.voiceArticulations));
-        const entries=Object.entries(note.voiceArticulations);projectCheck(entries.length<=6);
+        const entries=Object.entries(note.voiceArticulations);projectCheck(entries.length<=openStrings.length);
         result.voiceArticulations=Object.fromEntries(entries.map(([pitch,value])=>{
           projectCheck(String(Number(pitch))===pitch&&guitarPitches(result).includes(Number(pitch)));
           return [pitch,projectChoice(value,['open','mute'])];
@@ -68,20 +70,20 @@ function projectNotes(value, count, single, nullable = false, minPitch = 38, max
       }
       if (note.voiceTechniques !== undefined) {
         projectCheck(!single && note.voiceTechniques && typeof note.voiceTechniques==='object' && !Array.isArray(note.voiceTechniques));
-        const entries=Object.entries(note.voiceTechniques);projectCheck(entries.length<=6);
+        const entries=Object.entries(note.voiceTechniques);projectCheck(entries.length<=openStrings.length);
         result.voiceTechniques=Object.fromEntries(entries.map(([pitch,t])=>{
           projectCheck(String(Number(pitch))===pitch && guitarPitches(result).includes(Number(pitch)) && t && typeof t==='object');
           const type=projectChoice(t.type,['hammer','pull','bend-half','bend-whole']);
-          return [pitch,{type,...(['hammer','pull'].includes(type)?{from:projectNumber(t.from,38,86,true)}:{})}];
+          return [pitch,{type,...(['hammer','pull'].includes(type)?{from:projectNumber(t.from,openStrings[0],86,true)}:{})}];
         }));
       }
       if (note.voiceEdits !== undefined) {
         projectCheck(note.voiceEdits && typeof note.voiceEdits === 'object' && !Array.isArray(note.voiceEdits));
         const entries = Object.entries(note.voiceEdits);
-        projectCheck(entries.length <= 6);
+        projectCheck(entries.length <= openStrings.length);
         const pitches = guitarPitches(result);
         result.voiceEdits = Object.fromEntries(entries.map(([pitch, spans]) => {
-          projectCheck(Number.isInteger(Number(pitch)) && Number(pitch) >= 38 && Number(pitch) <= 86 && String(Number(pitch)) === pitch
+          projectCheck(Number.isInteger(Number(pitch)) && Number(pitch) >= openStrings[0] && Number(pitch) <= 86 && String(Number(pitch)) === pitch
             && Array.isArray(spans) && spans.length <= 16 && (pitches.includes(Number(pitch)) || spans.length === 0));
           let end = 0;
           return [pitch, spans.map(pair => {
@@ -132,7 +134,7 @@ function readArrangement(text) {
   let value;
   try { value = JSON.parse(text); } catch { throw new Error('Die Datei ist keine gültige Arrangement-Datei.'); }
   projectCheck(value?.format === 'fuzz-room-arrangement', 'Wähle eine mit „Arrangement speichern“ erstellte Fuzz-Room-Datei.');
-  projectCheck([1,2].includes(value.version), 'Diese Dateiversion wird noch nicht unterstützt.');
+  projectCheck([1,2,3].includes(value.version), 'Diese Dateiversion wird noch nicht unterstützt.');
   projectCheck(Array.isArray(value.parts) && value.parts.length > 0 && value.parts.length <= 256);
   const ids = new Set();
   const parts = value.parts.map(part => {
@@ -142,15 +144,15 @@ function readArrangement(text) {
     projectCheck(p && meta);
     const count = projectChoice(p.guitar?.length, [4, 8, 16]);
     const mode = projectChoice(p.mode, ['riff', 'melody']);
-    const pattern = {style: projectChoice(p.style, ['stoner', 'punk', 'hard']),stonerStyle:projectChoice(p.stonerStyle??'classic',Object.keys(stonerProfiles)),
+    const pattern = {tuning:projectChoice(p.tuning??'dropd',Object.keys(guitarTunings)),style: projectChoice(p.style, ['stoner', 'punk', 'hard','numetal','korn']),stonerStyle:projectChoice(p.stonerStyle??'classic',['classic','desert','doom','psych']),
       melodyStyle: projectChoice(p.melodyStyle, ['desert', 'psych', 'stoner', 'blues']),
       key: projectNumber(p.key, 0, 11, true), scale: projectChoice(p.scale, Object.keys(scales)),
       tempo: projectNumber(p.tempo, 55, 210, true), mode,
-      guitar: projectNotes(p.guitar, count, mode === 'melody'), drums: projectDrums(p.drums, count),
-      lead: projectNotes(p.lead, count, true, true), bass: projectNotes(p.bass ?? null,count,true,true,26,55),vocal:projectNotes(p.vocal??null,count,true,true,45,77)};
+      guitar: projectNotes(p.guitar, count, mode === 'melody',false,mode==='melody'?0:38,mode==='melody'?127:86), drums: projectDrums(p.drums, count),
+      lead: projectNotes(p.lead, count, true, true,0,127), bass: projectNotes(p.bass ?? null,count,true,true,21,55),vocal:projectNotes(p.vocal??null,count,true,true,45,77)};
     const details = {...projectDetails(meta, 'guitar'), ...projectDetails(meta, 'drums'), ...projectDetails(meta, 'lead'), ...projectDetails(meta, 'bass'),...projectDetails(meta,'vocal'),
-      style: projectChoice(meta.style, ['stoner', 'punk', 'hard']),stonerStyle:projectChoice(meta.stonerStyle??pattern.stonerStyle,Object.keys(stonerProfiles)),
-      melodyStyle: projectChoice(meta.melodyStyle, ['desert', 'psych', 'stoner', 'blues']), muteLead: Boolean(meta.muteLead)};
+      style: projectChoice(meta.style, ['stoner', 'punk', 'hard','numetal','korn']),stonerStyle:projectChoice(meta.stonerStyle??pattern.stonerStyle,['classic','desert','doom','psych']),
+      melodyStyle: projectChoice(meta.melodyStyle, ['desert', 'psych', 'stoner', 'blues']), muteLead: Boolean(meta.muteLead),composeSettings:readComposeSettings(meta.composeSettings)};
     projectCheck(details.mode === mode);
     const history = Object.fromEntries(['guitar', 'drums', 'lead', 'bass', 'vocal'].map(field => {
       const stored = part.history?.[field] ?? {past: [], future: []};
@@ -158,8 +160,8 @@ function readArrangement(text) {
         projectCheck(Array.isArray(stored[stack]) && stored[stack].length <= 30);
         return [stack, stored[stack].map(snapshot => {
           const details = projectDetails(snapshot?.details, field);
-          const data = field==='vocal'?projectNotes(snapshot.data??null,count,true,true,45,77):field === 'bass' ? projectNotes(snapshot.data,count,true,true,26,55) : field === 'drums' ? projectDrums(snapshot.data, count)
-            : projectNotes(snapshot.data, count, field === 'lead' || details.mode === 'melody', field === 'lead');
+          const data = field==='vocal'?projectNotes(snapshot.data??null,count,true,true,45,77):field === 'bass' ? projectNotes(snapshot.data,count,true,true,21,55) : field === 'drums' ? projectDrums(snapshot.data, count)
+            : projectNotes(snapshot.data, count, field === 'lead' || details.mode === 'melody', field === 'lead',field==='lead'||details.mode==='melody'?0:38,field==='lead'||details.mode==='melody'?127:86);
           return {data, details};
         })];
       }));
@@ -173,8 +175,8 @@ function readArrangement(text) {
   const guides = Object.fromEntries(['riff', 'melody'].map(track => [track,
     Object.fromEntries(['snare', 'kick'].map(kind => [kind, Boolean(value.view?.guides?.[track]?.[kind])]))]));
   const articulation = projectChoice(value.view?.articulation ?? 'open', ['open', 'mute']);
-  const riffProfiles=readRiffTechniqueProfiles(value.riffTechniqueProfiles);
-  return {riffTechniqueProfiles:riffProfiles,parts, activeSection: value.activeSection, mixer: {levels, mutes: [...new Set(value.mixer.mutes)]}, view: {guides, articulation},
+  // Legacy generation-technique preferences are ignored; per-note techniques stay intact.
+  return {parts, activeSection: value.activeSection, mixer: {levels, mutes: [...new Set(value.mixer.mutes)]}, view: {guides, articulation},
     locks: {guitar: Boolean(value.locks?.guitar), drums: Boolean(value.locks?.drums)}};
 }
 
@@ -182,7 +184,7 @@ function createArrangement() {
   if (chatComparison) throw new Error('Übernimm oder verwerfe zuerst die ChatGPT-Vorschau.');
   saveSection();
   songParts.forEach(sectionHistory);
-  const value = {format: 'fuzz-room-arrangement', version: 2, parts: songParts, activeSection, riffTechniqueProfiles,
+  const value = {format: 'fuzz-room-arrangement', version: 3, parts: songParts, activeSection,
     mixer: {levels: Object.fromEntries(mixerChannels.map(channel => [channel, Number(get(channel).value)])), mutes: [...mixerMutes]},
     locks: {guitar: get('lock-guitar').checked, drums: get('lock-drums').checked},
     view: {guides: drumGuides, articulation: get('riff-articulation').value}};
@@ -233,7 +235,7 @@ function loadArrangement(project) {
   aiPromptContext = null;
   noteDrag = null;
   suppressGridClick = false;
-  riffTechniqueProfiles=structuredClone(project.riffTechniqueProfiles??defaultRiffTechniqueProfiles());
+
   songParts = project.parts;
   sectionSerial = Math.max(...songParts.map(part => part.id));
   for (const channel of mixerChannels) get(channel).value = project.mixer.levels[channel];
@@ -287,15 +289,3 @@ get('arrangement-import-confirm').addEventListener('click', () => {
   get('arrangement-import-dialog').close();
 });
 
-function readRiffTechniqueProfiles(value) {
-  if(value===undefined) return defaultRiffTechniqueProfiles();
-  projectCheck(value&&typeof value==='object'&&!Array.isArray(value));
-  return Object.fromEntries(['stoner','hard','punk'].map(style=>{
-    const profile=value[style];projectCheck(profile&&typeof profile==='object'&&!Array.isArray(profile));
-    const settings=Object.fromEntries(Object.keys(riffGenerationLabels).map(key=>{
-      projectCheck(typeof profile[key]==='boolean');return [key,profile[key]];
-    }));
-    projectCheck(settings.open||settings.pm);settings.sustain=Boolean(settings.sustain&&settings.open);
-    return [style,settings];
-  }));
-}

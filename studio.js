@@ -4,13 +4,13 @@ const get = id => document.getElementById(id);
 const playButton = get('play');
 const timeline = get('timeline');
 const grooveNames = ['Grundgroove', 'Offene Hi-Hat', 'Halftime'];
-const presetNames = ['Palm Mute', 'Offene Akkorde'];
-const config = {style: 'stoner', stonerStyle:'classic', melodyStyle: 'desert', key: 4, scale: 'minor', tempo: 90, mode: 'riff'};
-const opening = originalGuitar(0, config);
-let selected = {...config, guitar: opening, drums: makeGroove(config, opening, 0), lead: null, bass: null, vocal: null};
-let guitarName = presetNames[0];
-let grooveName = grooveNames[0];
-let preset = 0;
+
+const config = {tuning:'dropd',style: 'stoner', stonerStyle:'classic', melodyStyle: 'desert', key: 4, scale: 'minor', tempo: 90, mode: 'riff'};
+const opening = Array.from({length:4},()=>[]);
+let selected = {...config, guitar: opening, drums: Array.from({length:4},()=>Array.from({length:16},()=>[])), lead: null, bass: null, vocal: null};
+let guitarName = 'Noch leer';
+let grooveName = 'Noch leer';
+let preset = null;
 let polyphonicRiff = false;
 let groove = 0;
 let editedBar = -1;
@@ -41,7 +41,7 @@ let chatComparison;
 const chatPartLabels = {melody: 'Melodie', riff: 'Riff', drums: 'Drums', arrangement: 'Arrangement', section: 'Songteil', bass: 'Bass', vocal: 'Gesang'};
 let sectionSerial = 1;
 let activeSection = 1;
-let songParts = [{id: 1, name: 'Vorhandenes Riff', type: 'Riff', pattern: selected, meta: null}];
+let songParts = [{id: 1, name: 'Mein erster Teil', type: 'Riff', pattern: selected, meta: null}];
 let restoringHistory = false;
 
 function trackHistoryField(track) {
@@ -155,9 +155,26 @@ function renderSong(updateName = true) {
       move.setAttribute('aria-label', `${part.name} ${action === 'up' ? 'nach vorne' : 'nach hinten'} verschieben`);
       card.append(move);
     }
+    const play=element('button','song-part-play','▶ Play');
+    play.type='button';play.dataset.section=part.id;play.dataset.play='true';
+    card.append(play);
     return card;
   }));
+  renderSongPlayback();
   if (updateName) get('section-name').value = songParts.find(part => part.id === activeSection)?.name ?? '';
+}
+
+function renderSongPlayback(){
+  const playingId=playback ? (playback.song ? playback.song[playback.position?.songIndex??playback.songIndex]?.id : activeSection) : null;
+  for(const card of get('song-parts').children){
+    const button=card.querySelector('button[data-play]');if(!button)continue;
+    const part=songParts.find(p=>p.id===Number(button.dataset.section));
+    if(!part){button.disabled=true;continue;}
+    const playing=part?.id===playingId;
+    button.textContent=playing?'■ Stopp':'▶ Play';
+    button.setAttribute('aria-label',playing?part.name+' stoppen':part.name+' ab Takt 1 als Loop abspielen');
+    button.setAttribute('aria-pressed',playing);button.disabled=playButton.disabled;
+  }
 }
 
 function renderBarPickers() {
@@ -190,6 +207,7 @@ function openSection(id, {skipSave = false} = {}) {
   aiPromptContext = null;
   const meta = part.meta;
   if (meta) {
+    composeSettings=readComposeSettings(meta.composeSettings);
     ({guitarName, grooveName, preset, polyphonicRiff, melodyEdited, groove, leadTake} = meta);
     bassName = meta.bassName ?? 'Optional'; bassStyle = meta.bassStyle ?? 'riff';
     vocalName=meta.vocalName??'Optional';vocalRange=meta.vocalRange??'mid';
@@ -197,6 +215,7 @@ function openSection(id, {skipSave = false} = {}) {
     config.stonerStyle=meta.stonerStyle??part.pattern.stonerStyle??'classic';
     get('mute-lead').checked = meta.muteLead;
   }
+  config.tuning=part.pattern.tuning??'dropd';
   for (const field of ['key', 'scale', 'tempo', 'mode']) config[field] = part.pattern[field];
   for (const field of ['key', 'scale', 'tempo', 'mode', 'style']) get(field).value = config[field];
   get('melody-style').value = config.melodyStyle;
@@ -304,17 +323,19 @@ function renderTimeline(pattern) {
 }
 
 function renderTabs(id, guitar, bass = false) {
-  const names = bass ? ['D', 'A', 'D', 'G'] : ['D', 'A', 'D', 'G', 'H', 'E'];
+  const tabTuning=guitarTunings[guitar.flat().some(n=>n.tuning==='a7')?'a7':'dropd'].notes;
+  const bassStrings=bassTunings[guitar.flat().some(n=>n.bassTuning==='a5'||n.root<26)?'a5':'dropd'].notes;
+  const names = bass ? bassStrings.map(p=>keyNames[p%12]) : tabTuning.map(p=>keyNames[p%12]);
   const frets = note => {
-    if (!bass) return guitarFrets(note);
-    const tuning = [26, 33, 38, 43];
+    if (!bass) return findRiffVoicing(guitarPitches(note).toSorted((a,b)=>a-b),[],null,tabTuning)??[];
+    const tuning = bassStrings;
     const string = tuning.findLastIndex(pitch => pitch <= note.root);
     return string < 0 ? [] : [[string, note.root - tuning[string]]];
   };
   const strings = names.map(name => [`${name}|`]);
   const markers = ['  '];
   const mark = {mute: 'PM ', open: 'O  ', single: '♪  '};
-  const techniques = {slide: 'S', hammer: 'H', bend: 'B', vibrato: 'V'};
+  const techniques = {slide: 'S', hammer: 'H', pull:'P', bend: 'B', vibrato: 'V'};
   guitar.forEach(notes => {
     const bar = names.map(() => Array(stepsPerBar).fill('---'));
     const technique = Array(stepsPerBar).fill('   ');
@@ -361,12 +382,21 @@ function startGrid(grid, label, activeBar, columns) {
     if (bar > 0 && step === 0) tick.classList.add('bar-start');
     header.append(tick);
   }
-  if (all) {
+  {
     const labels = element('div', 'grid-row grid-bar-labels');
     labels.append(element('span', '', 'Takte'));
-    for (const {bar, step} of columns) if (step === 0) labels.append(element('span', 'grid-bar-title', `Takt ${bar + 1}`));
+    for (const {bar, step} of columns) if (step === 0) {
+      const button=element('button','grid-bar-title',`Takt ${bar+1}`);
+      button.type='button';button.dataset.loopBar=bar;
+      button.title='Während der Wiedergabe: Takt loopen. Erneut klicken: ganzen Teil ab Takt 1 spielen.';
+      button.setAttribute('aria-label',`Takt ${bar+1} als Loop ein- oder ausschalten`);
+      button.setAttribute('aria-pressed',playback?.loopBar===bar);
+      button.classList.toggle('selected-bar-loop',playback?.loopBar===bar);
+      button.addEventListener('click',()=>toggleBarLoop(bar));
+      labels.append(button);
+    }
     grid.replaceChildren(labels, header);
-  } else grid.replaceChildren(header);
+  }
 }
 
 function applyDrumGuide(cell, bar, step, track) {
@@ -417,9 +447,9 @@ function renderRiffGrid(bars = selected.guitar) {
   const attacks = bars.map(riffAttacks);
   const visibleAttacks = riffBar === -1 ? attacks.flat() : attacks[riffBar];
   const voiced = new Set(visibleAttacks.map(voice => voice.pitch));
-  const firstPitch = tunings[0];
-  const lastPitch = tunings.at(-1) + 22;
-  renderScaleLegend('riff-key', ' · Drop D');
+  const firstPitch = Math.min(tunings[0],...voiced);
+  const lastPitch = Math.max(tunings.at(-1)+22,...voiced);
+  renderScaleLegend('riff-key', ' · '+guitarTunings[config.tuning??'dropd'].name);
   get('riff-edit-status').textContent = '';
   get('riff-articulation').disabled = locked;
   for (const articulation of ['open', 'mute']) {
@@ -427,7 +457,7 @@ function renderRiffGrid(bars = selected.guitar) {
     get(`riff-articulation-${articulation}`).setAttribute('aria-pressed', get('riff-articulation').value === articulation);
   }
   startGrid(grid, 'Ton', riffBar, columns);
-  for (let pitch = firstPitch; pitch <= lastPitch; pitch++) {
+  for (let pitch = lastPitch; pitch >= firstPitch; pitch--) {
     if (!voiced.has(pitch) && !scale.includes((pitch - config.key + 120) % 12)) continue;
     const name = `${keyNames[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
     const row = element('div', 'grid-row');
@@ -511,13 +541,14 @@ function renderMelodyGrid(bars = melodySource()) {
       const description = onset ? `, Länge ${onset.length.toLocaleString('de-DE', {maximumFractionDigits: 1})} Sechzehntel` : sustain ? ', klingt weiter' : '';
       const techniques = [];
       if (note?.transition === 'hammer') techniques.push('Hammer-on');
+      if(note?.transition==='pull')techniques.push('Pull-off');
       if (note?.expression === 'bend') techniques.push(bendDescription(note));
       if (note) {
         cell.dataset.noteBar = onset ? bar : sustain.bar;
         cell.dataset.noteStep = note.step;
       }
       if (onset && techniques.length) {
-        cell.textContent = (onset.transition === 'hammer' ? 'H' : '') + (onset.expression === 'bend' ? bendSymbol(onset) : '');
+        cell.textContent = (onset.transition === 'hammer' ? 'H' : onset.transition==='pull'?'P':'') + (onset.expression === 'bend' ? bendSymbol(onset) : '');
         cell.classList.add('has-technique');
         cell.title = techniques.join(' · ');
       }
@@ -568,70 +599,34 @@ function commitRiff(guitar, {fromChat = false} = {}) {
 }
 
 function renderControls() {
-  renderStonerChoice();
-  renderRiffGenerationOptions();
-  const guitarLocked = get('lock-guitar').checked;
-  const drumsLocked = get('lock-drums').checked;
-  for (const id of ['key', 'scale', 'mode', 'new-guitar', 'poly-riff', 'variation']) get(id).disabled = guitarLocked;
-  for (const id of ['change-drums', 'new-drums']) get(id).disabled = drumsLocked;
-  get('guitar-name').textContent = guitarName;
-  get('groove').textContent = grooveName;
-  get('new-guitar').textContent = config.mode === 'riff' ? 'Neues Riff' : 'Neue Melodie';
-  get('export-guitar').textContent = config.mode === 'riff' ? 'Riff als MIDI' : 'Melodie als MIDI';
-  get('export-guitar').dataset.track = config.mode;
-  const solo = config.mode === 'melody';
-  get('open-ai-melody').disabled = solo && guitarLocked;
-  get('open-ai-riff').disabled = guitarLocked;
-  get('open-ai-riff').hidden = solo;
-  get('open-ai-drums').disabled = drumsLocked;
-  get('open-ai-arrangement').disabled = guitarLocked || drumsLocked;
-  get('open-ai-bass').disabled = false;
-  get('open-ai-vocal').disabled=false;
-  get('vocal-name').textContent=selected.vocal?vocalName:'Optional';
-  get('vocal-volume').disabled=!selected.vocal;get('export-vocal').disabled=!selected.vocal;
+  tunings=guitarTunings[config.tuning??'dropd'].notes;
+  get('guitar-tuning').value=config.tuning??'dropd';
+  renderComposeSettings();
+  const guitarLocked=get('lock-guitar').checked,drumsLocked=get('lock-drums').checked;
+  get('open-ai-riff').disabled=get('track-ai-guitar').disabled=guitarLocked;
+  get('open-ai-drums').disabled=get('track-ai-drums').disabled=drumsLocked;
+  get('open-ai-arrangement').disabled=guitarLocked||drumsLocked;
+  get('riff-editor').hidden=selected.mode!=='riff';
   get('vocal-range').value=vocalRange;
-  get('toggle-vocal').textContent=selected.vocal?'Gesang entfernen':'Passenden Gesang hinzufügen';
-  get('toggle-vocal').setAttribute('aria-pressed',Boolean(selected.vocal));
-  get('bass-name').textContent = selected.bass ? bassName : 'Optional';
-  get('bass-volume').disabled = !selected.bass;
-  get('export-bass').disabled = !selected.bass;
-  get('toggle-bass').textContent = selected.bass ? 'Bass entfernen' : 'Passenden Bass hinzufügen';
-  get('toggle-bass').setAttribute('aria-pressed', Boolean(selected.bass));
-  get('track-ai-guitar').textContent = `${solo ? 'Melodie' : 'Riff'} mit ChatGPT`;
-  get('track-ai-guitar').disabled = guitarLocked;
-  get('track-ai-drums').disabled = drumsLocked;
-  get('track-ai-melody').disabled = solo && guitarLocked;
-  get('poly-riff').hidden = solo;
-  get('riff-editor').hidden = solo;
-  const hasMelody = solo || Boolean(selected.lead);
-  const muted = get('mute-lead').checked;
-  get('lead-status').textContent = hasMelody ? (muted ? 'Stumm' : melodyEdited ? 'Bearbeitet' : solo ? 'Melodie ohne Riff' : 'Passend zum Riff') : 'Optional';
-  timeline.classList.toggle('lead-muted', muted);
-  get('toggle-lead').textContent = selected.lead ? 'Melodie entfernen' : 'Passende Melodie hinzufügen';
-  get('toggle-lead').hidden = solo;
-  get('toggle-lead').setAttribute('aria-pressed', Boolean(selected.lead));
-  for (const id of ['new-lead']) get(id).hidden = !selected.lead;
-  get('export-lead').disabled = !selected.lead;
-  get('mute-lead-label').hidden = !hasMelody;
-  get('lead-volume').disabled = !hasMelody;
-  get('melody-style').disabled = solo && guitarLocked;
-  get('lead-techniques').hidden = !hasMelody;
-  get('guitar-volume').disabled = solo;
-  for (const channel of mixerChannels) {
-    const mute = get(`${channel}-mute`);
-    const muted = isMixerMuted(channel);
-    mute.disabled = Boolean(get(channel).disabled);
-    mute.setAttribute('aria-pressed', muted);
-    mute.textContent = muted ? 'Stumm' : 'Mute';
+  const tracks={riff:selected.guitar,drums:selected.drums,melody:melodySource(),bass:selected.bass,vocal:selected.vocal};
+  const ids={riff:'guitar',drums:'drums',melody:'lead',bass:'bass',vocal:'vocal'};
+  for(const [track,bars] of Object.entries(tracks)) {
+    const filled=Boolean(bars?.flat(track==='drums'?2:1).length);
+    get('export-'+ids[track]).disabled=!filled;
+    get('clear-'+track).disabled=!filled||(track==='riff'&&guitarLocked)||(track==='drums'&&drumsLocked);
   }
-  get('presets').hidden = config.style !== 'stoner' || config.mode !== 'riff';
-  get('presets').querySelectorAll('button').forEach(button => {
-    button.disabled = guitarLocked;
-    button.setAttribute('aria-pressed', Number(button.dataset.preset) === preset);
-  });
-  renderTabView();
-  renderTrackActions();
-  renderEditorTransport();
+  get('guitar-name').textContent=tracks.riff.flat().length?guitarName:'Noch leer';
+  get('groove').textContent=tracks.drums.flat(2).length?grooveName:'Noch leer';
+  get('lead-status').textContent=selected.lead?'Eigene Melodie':'Noch leer';
+  get('bass-name').textContent=selected.bass?bassName:'Noch leer';
+  get('vocal-name').textContent=selected.vocal?vocalName:'Noch leer';
+  get('export-guitar').dataset.track=config.mode;
+  get('lead-volume').disabled=!melodySource();get('bass-volume').disabled=!selected.bass;get('vocal-volume').disabled=!selected.vocal;
+  get('mute-lead-label').hidden=!selected.lead;
+  for(const channel of mixerChannels){const button=get(channel+'-mute');button.disabled=get(channel).disabled;button.setAttribute('aria-pressed',isMixerMuted(channel));button.textContent=isMixerMuted(channel)?'Stumm':'Mute';}
+  timeline.classList.toggle('lead-muted',get('mute-lead').checked);
+  get('export').disabled=!Object.values(tracks).some(bars=>bars?.flat(2).length);
+  renderTabView();renderEditorTransport();
 }
 
 function editorTrackAvailable(track) {
@@ -652,13 +647,20 @@ function renderEditorTransport() {
     button.disabled = playButton.disabled || !editorTrackAvailable(track);
     button.setAttribute('aria-pressed', solo);
     button.textContent = 'Solo';
+    const headingSolo=get('heading-'+track+'-solo');
+    headingSolo.disabled=button.disabled;headingSolo.setAttribute('aria-pressed',solo);
+    headingSolo.title=solo?'Solo aufheben':name+' solo abspielen';
+    get('heading-volume-'+track).classList.toggle('heading-solo-muted',silent);
     get(grid).classList.toggle('solo-muted', silent);
     get(`${track}-solo-state`).textContent = !editorTrackAvailable(track) ? 'Keine Spur vorhanden' : solo ? 'Solo aktiv' : silent ? 'Durch Solo stumm' : playing ? 'Gemeinsame Wiedergabe' : '';
   }
   renderHistoryButtons();
+  renderMelodyOctaveButtons();
+  renderSongPlayback();
 }
 
 function renderGridPosition(visible = playback?.position) {
+  renderBarLoopSelection();
   const opened = songParts.find(part => part.id === activeSection);
   const playing = visible && playback?.song ? playback.song[visible.songIndex] : opened;
   const text = visible
@@ -671,6 +673,28 @@ function renderGridPosition(visible = playback?.position) {
     get(grid).querySelectorAll('.playhead').forEach(cell => cell.classList.remove('playhead'));
     if (showCursor) get(grid).querySelectorAll(`[data-bar="${visible.bar}"][data-step="${visible.step}"]`).forEach(cell => cell.classList.add('playhead'));
   }
+}
+
+function renderBarLoopSelection(){
+  for(const {grid} of Object.values(editorTracks))for(const button of get(grid).querySelectorAll('button[data-loop-bar]')){
+    const chosen=playback?.loopBar===Number(button.dataset.loopBar);
+    button.setAttribute('aria-pressed',chosen);button.classList.toggle('selected-bar-loop',chosen);
+  }
+}
+
+function toggleBarLoop(bar){
+  if(!playback||playButton.disabled||!Number.isInteger(bar)||bar<0||bar>=selected.guitar.length)return;
+  const next=playback.loopBar===bar?null:bar;
+  sound.stop();
+  playback.loopBar=next;playback.song=null;playback.songIndex=0;delete playback.endTime;
+  playback.scheduled=playback.active=selected;
+  playback.riffAttacks=selected.mode==='riff'?selected.guitar.map(riffAttacks):null;
+  playback.step=(next??0)*stepsPerBar;
+  playback.nextTime=sound.context.currentTime+.05;
+  playback.visual.length=0;delete playback.position;
+  applyVolume();renderTimeline(selected);renderSong();renderEditorTransport();renderGridPosition();
+  get('counter').textContent=`${String((next??0)+1).padStart(2,'0')} / ${String(selected.guitar.length).padStart(2,'0')}`;
+  updateTransportStatus();schedule();
 }
 
 function toggleMixerMute(channel) {
@@ -698,10 +722,11 @@ function aiMelodyBars(notes, count = selected.guitar.length) {
     const interval = previous ? note.pitch - previous.pitch : 0;
     const slide = note.technique === 'slide' && interval !== 0 && Math.abs(interval) <= 7;
     const hammer = note.technique === 'hammer' && interval >= 1 && interval <= 4;
+    const pull=note.technique==='pull'&&interval<=-1&&interval>=-4;
     const bend = note.technique.startsWith('bend-');
     bars[Math.floor(note.step / stepsPerBar)].push({
       step: note.step % stepsPerBar, root: note.pitch, length: note.duration, articulation: 'single',
-      transition: slide ? 'slide' : hammer ? 'hammer' : undefined, from: slide ? previous.pitch : undefined,
+      transition: slide ? 'slide' : hammer ? 'hammer' : pull?'pull':undefined, from: slide ? previous.pitch : undefined,
       expression: bend ? 'bend' : note.technique === 'vibrato' ? 'vibrato' : undefined,
       bendCents: bend ? (note.technique === 'bend-half' ? 100 : 200) : undefined,
       bendShape: note.technique === 'bend-up-return' ? 'up-return' : note.technique === 'bend-release' ? 'release' : undefined,
@@ -721,23 +746,23 @@ function chatTrackContext(part) {
     key: selected.key, scale: selected.scale, tempo: selected.tempo, mode: selected.mode,
     style: part === 'melody' ? config.melodyStyle : config.style,
     melodyStyle: ['arrangement', 'section'].includes(part) ? config.melodyStyle : null,
-    bassStyle: part === 'bass' ? get('ai-bass-style').value : null,
+    bassStyle: part === 'bass' ? get('ai-bass-style').value : null, bassTuning:composeSettings.bass.bass.tuning,
     bass: part !== 'bass' && part !== 'arrangement' ? selected.bass : null,
     riff: ['drums', 'melody', 'section', 'bass', 'vocal'].includes(part) && selected.mode === 'riff' ? selected.guitar : null,
     drums: ['riff', 'melody', 'section', 'bass', 'vocal'].includes(part) ? selected.drums : null,
-    musicStyle: config.style,stonerStyle:config.stonerStyle,
-    riffTechniques: riffTechniqueProfiles[config.style],
+    tuning:config.tuning??'dropd',musicStyle: config.style,stonerStyle:config.stonerStyle, composeSignature:JSON.stringify(composeSettings),
     melody: ['riff', 'drums', 'section', 'bass', 'vocal'].includes(part) ? (selected.mode === 'melody' ? selected.guitar : selected.lead) : null};
 }
 
 function chatStyleName(context) {
-  const field = context.part === 'melody' ? 'melody-style' : 'style';
+  const field = 'style';
   return get(field).selectedOptions?.[0]?.textContent ?? context.style;
 }
 
 function chatTrackPrompt(context, description) {
-  if (context.part === 'bass') return chatBassPrompt(context, description)+stonerPromptGuidance(context);
-  if(context.part==='vocal') return chatVocalPrompt(context,description)+stonerPromptGuidance(context);
+  const tuning=guitarTunings[context.tuning??'dropd'];
+  if (context.part === 'bass') return chatBassPrompt(context, description)+composePromptGuidance(context);
+  if(context.part==='vocal') return chatVocalPrompt(context,description)+composePromptGuidance(context);
   const count = context.bars;
   const steps = count * stepsPerBar;
   let prompt = buildChatTrackPrompt(context.part === 'section' ? {...context, part: 'arrangement'} : context, description)
@@ -746,18 +771,15 @@ function chatTrackPrompt(context, description) {
     .replaceAll('Takt 4', `Takt ${count}`)
     .replaceAll('0 bis 63', `0 bis ${steps - 1}`)
     .replaceAll('1–64 Anschläge', `1–${steps} Anschläge`)
-    .replaceAll('2–32', `2–${steps / 2}`)
+    .replaceAll('2–64', `2–${steps}`)
     .replaceAll('Schritt 64', `Schritt ${steps}`);
   if (['arrangement', 'section'].includes(context.part) && context.hasBass) prompt += `\nKomponiere zusätzlich die Bassspur im selben JSON als "bass":{"notes":[{"step":0,"pitch":${bassPitches(context)[0]},"duration":4}]}. Erlaubte MIDI-Töne: ${bassPitches(context).join(', ')}. Einstimmig, 1 bis ${steps} Noten, ganzzahlige Einsätze 0 bis ${steps-1}, positive ganzzahlige Dauern, Ende spätestens bei Schritt ${steps}. Stimme den Bass auf Riff, Drums, Melodie und Musikstil ab.`;
-  if (['riff','arrangement','section'].includes(context.part)) prompt += '\nRiff-Spieltechniken dezent passend zum Musikstil einsetzen, bei Stoner Rock etwas häufiger: optional techniques je Riffanschlag als Liste, z.B. [{"pitch":64,"type":"bend-half"}]. Erlaubte Typen hammer, pull, bend-half, bend-whole. Jeder Eintrag betrifft nur diesen Ton aus pitches, alle anderen Töne bleiben normal. Halbton- und Ganzton-Bendings ziehen gleichmäßig hoch und zurück. Keine Bendings auf Leersaiten. Hammer-on/Pull-off nur zum nächsten Ton auf derselben Saite, Abstand 1–4 Halbtöne, Hammer aufwärts, Pull abwärts. Eine tiefe Leersaite darf dabei normal angeschlagen werden. Stilabhängig dezent: Bei Stoner Rock häufiger eine offene Begleitnote ausklingen lassen und darüber oder darunter einzelne Antworttöne spielen; bei Hard Rock gezielt, bei Punk selten. Andere Tonhöhen dabei nicht kürzen, längstens bis zum Taktende.';
-  if (['riff','arrangement','section'].includes(context.part)) {
-    const options=riffGenerationOptions(context);
-    const allowed=Object.entries(riffGenerationLabels).filter(([key])=>options[key]).map(([,name])=>name).join(', ');
-    const excluded=Object.entries(riffGenerationLabels).filter(([key])=>!options[key]).map(([,name])=>name).join(', ');
-    prompt += '\nVERBINDLICHE RIFF-AUSWAHL für diesen Musikstil: Erlaubt: '+allowed+'. Ausgeschlossen: '+(excluded||'keine')+'. Verwende ausschließlich erlaubte Spielweisen und Techniken. Diese Auswahl gilt für das neu komponierte Riff, nicht für die Begleitspuren. Häufigkeit automatisch und sparsam an den Stil anpassen: Stoner Rock bevorzugt offene, ausklingende Stimmen und Bendings, Hard Rock abwechslungsreiche Hammer-ons/Pull-offs und gezielte Bendings, Punk überwiegend kurze direkte Anschläge und wenig Verzierungen – jeweils nur soweit erlaubt. Bei ausgeschalteten ausklingenden Begleittönen endet jeder Riffton vor dem nächsten Anschlag. Ausgeschlossene Techniken auch dann nicht verwenden, wenn sie in einer Vorlage oder im JSON-Beispiel vorkommen.';
-  }
+  if(['riff','arrangement','section'].includes(context.part)) prompt+='\nNeue Rifftöne ohne automatische Hammer-ons, Pull-offs oder Bendings spielen. Genau ein Ton pro Anschlag, keine Akkorde. Palm Mute gemäß PM-Anteil; unterschiedliche ausklingende Töne dürfen sich überlagern. Vorhandene Begleitspuren unverändert lassen. Spieltechniken werden bei Bedarf danach manuell im Raster gesetzt.';
   if(['arrangement','section'].includes(context.part)&&context.hasVocal) prompt+='\nKomponiere zusätzlich eine Gesangsmelodie als vocal:{notes:[{step:0,pitch:'+vocalPitches(context,context.vocalRange)[0]+',duration:4}]}. '+vocalPromptRules(context);
-  prompt+=stonerPromptGuidance(context);
+  prompt+=composePromptGuidance(context);
+  prompt=prompt.replaceAll('38–86',tuning.notes[0]+'–'+(tuning.notes.at(-1)+22)).replaceAll('Drop-D-Leersaiten: MIDI 38, 45, 50, 55, 59, 64','Leersaiten: MIDI '+tuning.notes.join(', ')).replaceAll('Drop-D-Leersaiten: 38, 45, 50, 55, 59, 64','Leersaiten: '+tuning.notes.join(', ')).replaceAll('Drop-D',tuning.name);
+  if(['riff','arrangement','section'].includes(context.part))prompt+='\n'+newRiffStyleGuidance(context.musicStyle)+' Aktive Gitarrenstimmung: '+tuning.name+'. Leersaiten MIDI '+tuning.notes.join(', ')+'. Keine Akkorde, genau ein Ton pro Anschlag; gewählten PM-Anteil und die gewählte Tonleiter einhalten.';
+  if(context.part==='drums')prompt=prompt.replace('Kick und Riff stützen einander;','Eigenständiger Drum-Groove;').replace('Halte die Begleitung rhythmisch zusammen.','Entwickle einen eigenständigen Groove zum Stil.');
   if (context.part !== 'section') return prompt;
   prompt = prompt.replace('und am Ende zum Loop zurückführen.', 'und am Ende zum folgenden Songteil überleiten. Beim Outro darf der Schluss ausklingen.');
   const source = {
@@ -803,13 +825,13 @@ function buildChatTrackPrompt(context, description) {
     context.vocal ? `Vorhandener Gesang [Einsatz,MIDI-Ton,Länge]: ${JSON.stringify(context.vocal.flatMap((notes,bar)=>notes.map(note=>[bar*16+note.step,note.root,note.length])))}. Lasse Raum für die Gesangsphrase.` : '',
     context.bass ? `Vorhandener Bass als [Einsatz, MIDI-Ton, Länge]: ${JSON.stringify(context.bass.flatMap((notes,bar)=>notes.map(note=>[bar*16+note.step,note.root,note.length])))}.` : '',
     'Komponiere die gewählte Spur neu zu den vorhandenen Begleitspuren. Diese bleiben unverändert. Grundton, Tonart, Tempo und die vier Takte sind verbindlich. Beachte ihre Tonhöhen, Notenlängen, Pausen und rhythmischen Akzente; die neue Spur soll musikalisch dazu passen.',
-    {stoner: 'Stoner Rock: schwerer, lässiger Groove, markante wiederkehrende Motive, Raum für lange Töne und gezielte Synkopen. Kick und Riff stützen einander; die Melodie darf Riffanschläge überklingen.', punk: 'Punk Rock: direkter, treibender Groove, klare kurze Motive, Achtelpuls und prägnante Akzente. Halte die Begleitung rhythmisch zusammen.', hard: 'Hard Rock: druckvoller Backbeat, griffige Riffmotive und gezielte Synkopen. Melodie und Riff antworten einander; nutze Pausen für Platz.'}[context.musicStyle],
+    {stoner: 'Stoner Rock: schwerer, lässiger Groove, markante wiederkehrende Motive, Raum für lange Töne und gezielte Synkopen. Kick und Riff stützen einander; die Melodie darf Riffanschläge überklingen.', punk: 'Punk Rock: direkter, treibender Groove, klare kurze Motive, Achtelpuls und prägnante Akzente. Halte die Begleitung rhythmisch zusammen.', hard: 'Hard Rock: druckvoller Backbeat, griffige Riffmotive und gezielte Synkopen. Melodie und Riff antworten einander; nutze Pausen für Platz.'}[context.musicStyle]??newRiffStyleGuidance(context.musicStyle),
     'Behalte den Puls der Begleitung bei, ohne jeden Anschlag zu verdoppeln. Führe Takt 4 musikalisch zurück zu Takt 1. Antworte nur mit einem JSON-Codeblock. Ersetze die Beispielwerte durch deine Komposition.',
   ].filter(Boolean);
   if (context.part === 'arrangement') {
     const root = tonic(context.key);
     const pitches = melodyPitches(context);
-    const melodyStyle = get('melody-style').selectedOptions?.[0]?.textContent ?? context.melodyStyle;
+    const melodyStyle = get('style').selectedOptions?.[0]?.textContent ?? context.musicStyle;
     return [
       'Komponiere ein vollständiges, originelles Arrangement aus Gitarrenriff, Lead-Melodie und Drums für denselben viertaktigen Loop in Fuzz Room.',
       `4/4-Takt, ${context.tempo} BPM, ${key}. Riff- und Drumstil: ${chatStyleName(context)}. Melodiestil: ${melodyStyle}.`,
@@ -817,13 +839,13 @@ function buildChatTrackPrompt(context, description) {
       'Plane alle drei Spuren zusammen. Kick und Riff sollen sich rhythmisch ergänzen. Die Melodie soll ein Motiv entwickeln, über manche Riffanschläge hinweg ausklingen und am Ende zum Loop zurückführen.',
       'Antworte ausschließlich mit einem JSON-Codeblock. Ersetze alle Beispielwerte durch dein Arrangement:',
       JSON.stringify({
-        riff: {notes: [{step: 0, pitches: [root, root + 7], duration: 3, articulation: 'mute'}]},
-        melody: {notes: [{step: 0, pitch: pitches[0], duration: 8, technique: 'none'}, {step: 8, pitch: pitches[2], duration: 4, technique: 'vibrato'}]},
+        riff: {notes: [{step: 0, pitches: [root], duration: 3, articulation: 'open'}]},
+        melody: {notes: [{step: 0, pitch: pitches[0], duration: 8, technique: 'none'}, {step: 8, pitch: pitches[2], duration: 4, technique: 'none'}]},
         drums: {hits: [{step: 0, kind: 'kick', velocity: .9}, {step: 4, kind: 'snare', velocity: .8}]},
       }),
       'Alle step-Werte sind ganzzahlige Sechzehntelpositionen von 0 bis 63. duration ist eine positive ganze Zahl in Sechzehnteln.',
-      `Riff: 1–64 Anschläge, je ein Eintrag pro Einsatz, 1–6 MIDI-Töne gleichzeitig im Bereich 38–86 in ${key}. Drop-D-Leersaiten: 38, 45, 50, 55, 59, 64. Eine Note pro Saite, höchstens vier Bünde Spannweite. articulation: open oder mute. Unterschiedliche Rifftöne dürfen über spätere Anschläge hinweg bis zum Taktende weiterklingen. Ein neuer Ton darf andere Tonhöhen nicht kürzen. Nur eine erneut angeschlagene gleiche Tonhöhe beendet ihren vorherigen Klang. Optional durations und articulations: individuelle Längen und open/mute-Spielweisen je Ton in derselben Reihenfolge wie pitches.`,
-      `Melodie: 2–32 einstimmige Noten ohne Überschneidung, erlaubte MIDI-Töne ${pitches.join(', ')}. technique: none, hammer, slide, bend-half, bend-whole, bend-up-return, bend-release oder vibrato.`,
+      `Riff: 1–64 Anschläge, je ein Eintrag pro Einsatz, genau ein MIDI-Ton pro Anschlag im Bereich 38–86 in ${key}. Drop-D-Leersaiten: 38, 45, 50, 55, 59, 64. Eine Note pro Saite, höchstens vier Bünde Spannweite. articulation: open oder mute nach PM-Anteil. Ein Ton pro Anschlag; Notenlängen passend zum gewählten Rhythmus.`,
+      `Melodie: 2–64 einstimmige Noten ohne Überschneidung, erlaubte MIDI-Töne ${pitches.join(', ')}. technique ausschließlich gemäß den MELODIE-BAUSTEINEN und den dort freigegebenen Techniken.`,
       'Drums: kick, snare, hat, open, tom-high (hohe Tom), tom-mid (mittlere Tom), tom (Standtom) oder crash. velocity: Zahl über 0 bis 1. Mehrere verschiedene Instrumente pro Schritt sind erlaubt.',
     ].join('\n');
   }
@@ -836,9 +858,9 @@ function buildChatTrackPrompt(context, description) {
   if (context.part === 'riff') {
     const root = tonic(context.key);
     return ['Komponiere ein originelles, spielbares Drop-D-Gitarrenriff für einen viertaktigen Loop in Fuzz Room.', ...brief,
-      JSON.stringify({notes: [{step: 0, pitches: [root, root + 7], duration: 3, articulation: 'mute'}, {step: 4, pitches: [root], duration: 4, articulation: 'open'}]}),
+      JSON.stringify({notes: [{step: 0, pitches: [root], duration: 3, articulation: 'open'}, {step: 4, pitches: [root], duration: 4, articulation: 'open'}]}),
       `Erlaubte MIDI-Tonhöhen: 38–86 in ${key}, tiefe Lagen bevorzugen. Drop-D-Leersaiten: MIDI 38, 45, 50, 55, 59, 64. Höchstens eine Note pro Saite und höchstens vier Bünde Spannweite zwischen gegriffenen Tönen.`,
-      'step: ganzzahliger Einsatz von 0 bis 63 in Sechzehnteln. pitches: 1–6 gleichzeitig klingende MIDI-Töne. duration: Länge in Sechzehnteln, höchstens bis zum Taktende. Unterschiedliche Tonhöhen dürfen über spätere Anschläge ausklingen, nur ein erneuter Anschlag derselben Tonhöhe beendet deren vorherigen Klang. Optional durations und articulations: individuelle Längen und open/mute-Spielweisen je Ton in derselben Reihenfolge wie pitches. articulation: open oder mute. Nur ein Eintrag pro Einsatz.',
+      'step: ganzzahliger Einsatz von 0 bis 63 in Sechzehnteln. pitches: genau ein MIDI-Ton pro Anschlag. duration: Länge in Sechzehnteln, höchstens bis zum Taktende. Ein Ton pro Anschlag; Notenlängen passend zum gewählten Rhythmus, Überlagerung unterschiedlicher Töne erlaubt. articulation: open oder mute nach PM-Anteil. Nur ein Eintrag pro Einsatz.',
     ].join('\n');
   }
   const pitches = melodyPitches(context);
@@ -847,9 +869,9 @@ function buildChatTrackPrompt(context, description) {
     ...brief,
     `Erlaubte MIDI-Tonhöhen: ${pitches.join(', ')}.`,
     'Lass einzelne Töne ausklingen, entwickle das Motiv und führe es zu einem Schluss.',
-    JSON.stringify({notes: [{step: 0, pitch: pitches[0], duration: 8, technique: 'none'}, {step: 8, pitch: pitches[2], duration: 4, technique: 'vibrato'}]}),
-    'step: ganzzahliger Einsatz in Sechzehnteln von 0 bis 63. duration: ganzzahlige Dauer in Sechzehnteln, mindestens 1. 2–32 Noten, keine doppelten Einsätze oder Überschneidungen. Die letzte Note endet spätestens bei Schritt 64.',
-    'technique: none, hammer, slide, bend-half, bend-whole, bend-up-return, bend-release oder vibrato. Hammer-on nur vom vorherigen tieferen Ton, Slide nur zwischen nahen Tönen.',
+    JSON.stringify({notes: [{step: 0, pitch: pitches[0], duration: 8, technique: 'none'}, {step: 8, pitch: pitches[2], duration: 4, technique: 'none'}]}),
+    'step: ganzzahliger Einsatz in Sechzehnteln von 0 bis 63. duration: ganzzahlige Dauer in Sechzehnteln, mindestens 1. 2–64 Noten, keine doppelten Einsätze oder Überschneidungen. Die letzte Note endet spätestens bei Schritt 64.',
+    'technique ausschließlich gemäß den MELODIE-BAUSTEINEN und den dort freigegebenen Techniken. Normale Töne haben technique: none.',
   ].join('\n');
 }
 
@@ -863,11 +885,12 @@ function readChatJson(text) {
 }
 
 function readChatMelody(value, context) {
+  const allowed=context.composeSignature?readComposeSettings(JSON.parse(context.composeSignature)).melody.melody.techniques:null;
   const notes = value?.notes;
   const steps = (context.bars ?? selected.guitar.length) * stepsPerBar;
-  if (!Array.isArray(notes) || notes.length < 2 || notes.length > steps / 2) throw new Error(`Die Antwort muss 2 bis ${steps / 2} Noten enthalten.`);
+  if (!Array.isArray(notes) || notes.length < 2 || notes.length > steps) throw new Error(`Die Antwort muss 2 bis ${steps} Noten enthalten.`);
   const pitches = melodyPitches(context);
-  const techniques = ['none', 'hammer', 'slide', 'bend-half', 'bend-whole', 'bend-up-return', 'bend-release', 'vibrato'];
+  const techniques = ['none', 'hammer', 'pull', 'slide', 'bend-half', 'bend-whole', 'bend-up-return', 'bend-release', 'vibrato'];
   const sorted = notes.map(note => {
     if (!note || !Number.isInteger(note.step) || note.step < 0 || note.step >= steps
         || !pitches.includes(note.pitch) || !Number.isInteger(note.duration) || note.duration < 1 || note.duration > steps
@@ -877,6 +900,15 @@ function readChatMelody(value, context) {
     return {...note, technique: note.technique ?? 'none'};
   }).sort((a, b) => a.step - b.step);
   return sorted.map((note, index) => {
+    if(allowed&&note.technique!=='none'){
+      const type=note.technique.startsWith('bend-')?'bend':note.technique;
+      if(!allowed[type])throw new Error('Die Melodie enthält eine nicht freigegebene Spieltechnik. Bitte ChatGPT um eine passende Korrektur.');
+      if(['hammer','pull'].includes(type)){
+        const previous=sorted[index-1],interval=previous?note.pitch-previous.pitch:0;
+        if(!previous||previous.step+previous.duration<note.step||!melodyLegatoPossible(previous.pitch,note.pitch,context.tuning??'dropd')||(type==='hammer'?interval<=0:interval>=0))throw new Error('Hammer-on/Pull-off braucht direkt verbundene passende Töne auf derselben Saite.');
+      }
+      if(type==='bend'&&!pitches.includes(note.pitch+(note.technique==='bend-half'?1:2)))throw new Error('Der Zielton des Bendings liegt außerhalb der gewählten Tonleiter.');
+    }
     const available = (sorted[index + 1]?.step ?? steps) - note.step;
     if (available === 0) throw new Error('Zwei Noten beginnen im selben Schritt. Bitte ChatGPT um eine einstimmige Melodie.');
     return {...note, duration: Math.min(note.duration, available)};
@@ -884,6 +916,7 @@ function readChatMelody(value, context) {
 }
 
 function readChatRiff(value, context) {
+  const tunings=guitarTunings[context.tuning??'dropd'].notes;
   const notes = value?.notes;
   const steps = (context.bars ?? selected.guitar.length) * stepsPerBar;
   if (!Array.isArray(notes) || !notes.length || notes.length > steps) throw new Error(`Das Riff muss 1 bis ${steps} Anschläge enthalten.`);
@@ -903,9 +936,9 @@ function readChatRiff(value, context) {
     if (positions.has(note.step)) throw new Error('Fasse gleichzeitig gespielte Rifftöne in einem pitches-Feld zusammen.');
     positions.add(note.step);
     const pitches = note.pitches.toSorted((a, b) => a - b);
-    const voicing = findRiffVoicing(pitches, []);
+    const voicing = findRiffVoicing(pitches, [],null,tunings);
     if (!voicing) throw new Error(`Der Griff in Takt ${Math.floor(note.step / stepsPerBar) + 1}, Schritt ${note.step % stepsPerBar + 1} ist in Drop D nicht spielbar.`);
-    bars[Math.floor(note.step / stepsPerBar)].push({step: note.step % stepsPerBar, root: pitches[0], length: note.duration, articulation: note.articulation, voicing, voiceTechniques: readRiffTechniques(note.techniques,pitches),...(note.durations?{voiceEdits:Object.fromEntries(note.pitches.map((pitch,i)=>[pitch,[[0,note.durations[i]]]]))}:{}),...(note.articulations?{voiceArticulations:Object.fromEntries(note.pitches.map((pitch,i)=>[pitch,note.articulations[i]]))}:{})});
+    bars[Math.floor(note.step / stepsPerBar)].push({step: note.step % stepsPerBar, tuning:context.tuning??'dropd', root: pitches[0], length: note.duration, articulation: note.articulation, voicing, voiceTechniques: readRiffTechniques(note.techniques,pitches),...(note.durations?{voiceEdits:Object.fromEntries(note.pitches.map((pitch,i)=>[pitch,[[0,note.durations[i]]]]))}:{}),...(note.articulations?{voiceArticulations:Object.fromEntries(note.pitches.map((pitch,i)=>[pitch,note.articulations[i]]))}:{})});
   }
   const result=normalizeRiffVoices(bars.map(notes => notes.sort((a,b)=>a.step-b.step)));
   let decorated=result;
@@ -913,15 +946,6 @@ function readChatRiff(value, context) {
     const next=setRiffTechnique(decorated,bar,note.step,Number(pitch),technique.type);
     if(!next) throw new Error('Eine Riff-Spieltechnik passt nicht zur Saite oder zum vorherigen Ton.');
     decorated=next;
-  }
-  const allowed=riffGenerationOptions(context);
-  for(const notes of decorated) {
-    const voices=riffAttacks(notes);
-    for(const voice of voices) {
-      const type=voice.note.voiceTechniques?.[voice.pitch]?.type;
-      if(!allowed[voice.articulation==='mute'?'pm':'open'] || (type&&!allowed[type.startsWith('bend-')?'bend':type])) throw new Error('Das ChatGPT-Riff enthält eine Spielweise oder Technik, die für diesen Stil ausgeschaltet ist. Bitte ChatGPT um eine passende Korrektur.');
-      if(!allowed.sustain&&voices.some(other=>other.step>voice.step&&other.step<voice.step+voice.length)) throw new Error('Das ChatGPT-Riff enthält ausklingende Begleittöne, die für diesen Stil ausgeschaltet sind. Bitte ChatGPT um eine Korrektur.');
-    }
   }
   return decorated;
 }
@@ -991,7 +1015,7 @@ function importChatTrack(event) {
       aiPromptContext = null;
       openSection(part.id);
       get('ai-status').textContent = `${part.name} mit ${context.bars} Takten hinzugefügt. Dein bisheriger Teil bleibt erhalten.`;
-      return;
+      return restartGeneratedPlayback();
     }
     if(chatPart==='vocal') {
       candidate.vocal=readChatVocal(value,context);afterMeta.vocalName='ChatGPT-Gesang';afterMeta.vocalRange=context.vocalRange;
@@ -1039,7 +1063,7 @@ function importChatTrack(event) {
 }
 
 function comparisonMeta() {
-  return {guitarName, grooveName, preset, polyphonicRiff, melodyEdited, mode: config.mode,stonerStyle:config.stonerStyle, bassName, bassStyle, vocalName,vocalRange, muteLead: get('mute-lead').checked};
+  return {tuning:config.tuning??'dropd',composeSettings:structuredClone(composeSettings),guitarName, grooveName, preset, polyphonicRiff, melodyEdited, mode: config.mode,stonerStyle:config.stonerStyle, bassName, bassStyle, vocalName,vocalRange, muteLead: get('mute-lead').checked};
 }
 
 function renderComparison() {
@@ -1071,12 +1095,14 @@ function selectComparison(version) {
 
 function finishComparison(adopt) {
   if (!chatComparison) return;
+  const adoptedPart=chatComparison.part;
   selectComparison(adopt ? 'after' : 'before');
   chatComparison = null;
   saveSection();
   renderSong();
   renderComparison();
   get('ai-status').textContent = adopt ? 'Neue Version übernommen.' : 'Neue Version verworfen. Bisherige Version wiederhergestellt.';
+  if(adopt){if(adoptedPart==='bass'&&bassStyle!==composeSettings.bass.bass.mode){composeSettings={...composeSettings,bass:{...composeSettings.bass,bass:{...composeSettings.bass.bass,mode:bassStyle}}};saveSection();renderBassBlocks();}return restartGeneratedPlayback();}
 }
 
 function endComparison() {
@@ -1092,6 +1118,7 @@ function setStatus(text) {
 }
 
 function updateTransportStatus() {
+  if(playback.loopBar!=null){setStatus(`Läuft · Takt ${playback.loopBar+1} als Loop${playback.soloTrack?' · Nur '+editorTracks[playback.soloTrack].name:''}`);return;}
   if (playback.song) {
     const part = playback.song[playback.songIndex];
     setStatus(`Song · ${part.name}`);
@@ -1108,24 +1135,7 @@ function refresh(pattern, {guitar = false, drums = false, lead = false, bass = f
   for (const track of ['guitar', 'drums', 'lead', 'bass', 'vocal']) if (pattern[track]) pattern[track] = fitBars(pattern[track], count);
   if(pattern.guitar && (pattern.mode??selected.mode)==='riff') pattern.guitar=sanitizeRiffTechniques(normalizeRiffVoices(pattern.guitar));
   selected = {...selected, ...pattern};
-  if (selected.bass && (selected.key !== previous.key || selected.scale !== previous.scale)) {
-    const pitches = bassPitches(config);
-    const shift = (selected.key - previous.key + 18) % 12 - 6;
-    selected.bass = selected.bass.map(notes=>notes.map(note=>({...note,root:pitches.reduce((best,pitch)=>Math.abs(pitch-note.root-shift)<Math.abs(best-note.root-shift)?pitch:best)})));
-    bass = true;
-  }
-  if(selected.vocal&&(selected.key!==previous.key||selected.scale!==previous.scale)) {
-    const pitches=vocalPitches(config,vocalRange),shift=(selected.key-previous.key+18)%12-6;
-    selected.vocal=selected.vocal.map(notes=>notes.map(note=>({...note,root:pitches.reduce((best,pitch)=>Math.abs(pitch-note.root-shift)<Math.abs(best-note.root-shift)?pitch:best,pitches[0])})));vocal=true;
-  }
   if (selected.guitar.length !== previous.guitar.length) renderBarPickers();
-  if (guitar && selected.lead && !keepLead) {
-    if (config.mode === 'melody') selected.lead = null;
-    else if (!melodyEdited) selected.lead = makeLead(config, selected.guitar, leadTake);
-    else if (selected.key !== previous.key || selected.scale !== previous.scale) {
-      selected.lead = transposeEditedMelody(selected.lead, previous.key, config);
-    }
-  }
   renderControls();
   if (guitar) {
     renderTabs('tabs', selected.guitar);
@@ -1180,37 +1190,46 @@ function schedule() {
   if (playback.nextTime < now - .18) {
     sound.stop();
     playback.nextTime = now + .08;
-    playback.step = 0;
+    playback.step = (playback.loopBar??0)*stepsPerBar;
     playback.visual.length = 0;
     applyVolume();
   }
   while (playback.nextTime < now + .12) {
-    if (playback.step === 0) {
+    if (playback.step === (playback.loopBar??0)*stepsPerBar) {
       playback.scheduled = playback.song ? playback.song[playback.songIndex].pattern : selected;
       playback.riffAttacks = playback.scheduled.mode === 'riff' ? playback.scheduled.guitar.map(riffAttacks) : null;
+      sound.setLeadTone(currentLeadTone());sound.setVocalTone(currentVocalTone());
     }
     const pattern = playback.scheduled;
     const stepDuration = 15 / pattern.tempo;
     const bar = Math.floor(playback.step / stepsPerBar);
     const step = playback.step % stepsPerBar;
     const time = Math.max(playback.nextTime, now + .005);
+    const loopNote=bars=>{
+      let note=bars?.[bar].find(note=>note.step===step);
+      if(!note&&step===0&&playback.loopBar!=null){
+        const start=bar*16;
+        for(let b=0;b<bar;b++)for(const held of bars?.[b]??[])if(b*16+held.step+held.length>start)note={...held,length:b*16+held.step+held.length-start};
+      }
+      return note&&playback.loopBar!=null?{...note,length:Math.min(note.length,16-step)}:note;
+    };
     for (const hit of pattern.drums[bar][step]) {
       const voice = drumVoice[hit.kind];
       sound.drum(time + voice.delay + Math.random() * .005, hit.kind, hit.velocity * (.94 + Math.random() * .12));
     }
-    const note = pattern.guitar[bar].find(note => note.step === step);
+    const note = pattern.mode==='melody'?loopNote(pattern.guitar):pattern.guitar[bar].find(note => note.step === step);
     const voices = playback.riffAttacks?.[bar].filter(voice => voice.step === step);
     if (voices?.length) sound.guitar(time, voices, stepDuration, step === 0 ? .91 : .77);
     if (note && pattern.mode === 'melody') sound.lead(time, note, stepDuration);
-    const bass = pattern.bass?.[bar].find(note => note.step === step);
+    const bass = loopNote(pattern.bass);
     if (bass) sound.bass(time, bass, stepDuration);
-    const vocal=pattern.vocal?.[bar].find(note=>note.step===step);
+    const vocal=loopNote(pattern.vocal);
     if(vocal) sound.vocal(time,vocal,stepDuration);
-    const lead = pattern.lead?.[bar].find(note => note.step === step);
+    const lead = loopNote(pattern.lead);
     if (lead) sound.lead(time + .01, lead, stepDuration);
     playback.visual.push({pattern, time, bar, step, songIndex: playback.songIndex});
     if (playback.visual.length > stepsPerBar) playback.visual.shift();
-    playback.step = (playback.step + 1) % (pattern.guitar.length * stepsPerBar);
+    playback.step = playback.loopBar!=null ? playback.loopBar*16+(step+1)%16 : (playback.step + 1) % (pattern.guitar.length * stepsPerBar);
     playback.nextTime += stepDuration;
     if (playback.song && playback.step === 0) {
       if (playback.songIndex === playback.song.length - 1) {
@@ -1233,6 +1252,7 @@ function animate() {
       const part = playback.song[visible.songIndex];
       setStatus(`Song · ${part.name}`);
       get('song-status').textContent = `Spielt ${visible.songIndex + 1}/${playback.song.length}: ${part.name} · Takt ${visible.bar + 1}/${visible.pattern.guitar.length}`;
+      renderSongPlayback();
       for (const card of get('song-parts').children) card.classList.toggle('playing', Number(card.children[0].dataset.section) === part.id);
     }
     if (visible.pattern !== playback.active) {
@@ -1258,8 +1278,14 @@ function isMixerMuted(channel) {
   return channel === 'lead-volume' ? Boolean(get('mute-lead').checked) : mixerMutes.has(channel);
 }
 
+function currentLeadTone(){
+  const part=playback?.song?.[playback.songIndex];
+  return part&&part.id!==activeSection ? part.meta?.composeSettings?.melody?.sound??'riff' : composeSettings.melody.sound??'riff';
+}
+
 function applyVolume() {
   if (!sound || !playback) return;
+  sound.setLeadTone(currentLeadTone());sound.setVocalTone(currentVocalTone());
   const level = id => {
     const muted = id !== 'volume' && playback.soloTrack
       ? editorTracks[playback.soloTrack].channel !== id : isMixerMuted(id);
@@ -1283,6 +1309,15 @@ function stop() {
   renderSong();
   renderEditorTransport();
   renderGridPosition();
+}
+
+// New compositions audition the opened section from bar one, with Solo cleared.
+// A second generation during audio initialization requests another fresh start.
+let generatedRestartPending=false;
+async function restartGeneratedPlayback(){
+  if(playButton.disabled){generatedRestartPending=true;return;}
+  if(playback)stop();
+  await togglePlayback();
 }
 
 async function togglePlayback(wholeSong = false, soloTrack = null) {
@@ -1328,18 +1363,8 @@ async function togglePlayback(wholeSong = false, soloTrack = null) {
     playButton.disabled = false;
     get('play-song').disabled = false;
     renderEditorTransport();
+    if(generatedRestartPending){generatedRestartPending=false;return restartGeneratedPlayback();}
   }
-}
-
-function setNewGuitar() {
-  preset = null;
-  guitarName = config.mode === 'riff' ? 'Eigenes Riff' : 'Melodie';
-  if (config.mode === 'melody') melodyEdited = false;
-  if (polyphonicRiff && config.mode === 'riff') {
-    guitarName = 'Mehrstimmiges Riff';
-    return generatePolyRiff({...config,bars:selected.guitar.length});
-  }
-  return generateGuitar({...config,bars:selected.guitar.length}, leadTake);
 }
 
 playButton.addEventListener('click', () => togglePlayback());
@@ -1355,28 +1380,11 @@ for (const track of Object.keys(editorTracks)) {
   get(`${track}-redo`).addEventListener('click', () => restoreTrackHistory(track, true));
   get(`${track}-play`).addEventListener('click', () => { if (!playButton.disabled) return togglePlayback(); });
   get(`${track}-solo`).addEventListener('click', () => toggleEditorSolo(track));
+  get(`heading-${track}-solo`).addEventListener('click', () => toggleEditorSolo(track));
 }
 get('mute-lead').addEventListener('change', () => {
   renderControls();
   applyVolume();
-});
-get('toggle-lead').addEventListener('click', () => {
-  melodyEdited = false;
-  const lead = selected.lead ? null : makeLead(config, selected.guitar, leadTake);
-  if (lead) get('mute-lead').checked = false;
-  refresh({lead}, {lead: true});
-  applyVolume();
-});
-get('new-lead').addEventListener('click', () => {
-  melodyEdited = false;
-  leadTake = (leadTake + 1) % 3;
-  refresh({lead: makeLead(config, selected.guitar, leadTake)}, {lead: true});
-});
-get('melody-style').addEventListener('change', event => {
-  config.melodyStyle = event.target.value;
-  melodyEdited = false;
-  if (config.mode === 'melody') refresh({guitar: setNewGuitar()}, {guitar: true});
-  else if (selected.lead) refresh({lead: makeLead(config, selected.guitar, leadTake)}, {lead: true});
 });
 get('lock-guitar').addEventListener('change', () => { endComparison(); renderControls(); renderTimeline(selected); renderRiffGrid(); renderMelodyGrid(); });
 get('lock-drums').addEventListener('change', () => { endComparison(); renderControls(); renderGrid(); });
@@ -1394,72 +1402,18 @@ timeline.addEventListener('click', event => {
   refresh({guitar}, {guitar: true});
   timeline.children[bar].querySelector('.steps').children[Number(button.dataset.column ?? step)].focus({preventScroll: true});
 });
-get('new-guitar').addEventListener('click', () => {
-  polyphonicRiff = false;
-  if (config.mode === 'melody') leadTake = (leadTake + 1) % 3;
-  refresh({guitar: setNewGuitar()}, {guitar: true});
-});
-get('poly-riff').addEventListener('click', () => {
-  polyphonicRiff = true;
-  refresh({guitar: setNewGuitar()}, {guitar: true});
-});
-get('variation').addEventListener('click', () => {
-  const guitar = selected.guitar.slice();
-  const next = (polyphonicRiff ? generatePolyRiff(config) : generateGuitar(config, (leadTake + 1) % 3))[3];
-  if (JSON.stringify(next) === JSON.stringify(guitar[3])) next[0].length *= .65;
-  guitar[3] = next;
-  preset = null;
-  guitarName = 'Variation in Takt 4';
-  refresh({guitar}, {guitar: true});
-});
-get('presets').addEventListener('click', event => {
-  const button = event.target.closest('button[data-preset]');
-  if (!button) return;
-  preset = Number(button.dataset.preset);
-  polyphonicRiff = false;
-  guitarName = presetNames[preset];
-  refresh({guitar: originalGuitar(preset, config)}, {guitar: true});
-});
-get('change-drums').addEventListener('click', () => {
-  groove = (groove + 1) % grooveNames.length;
-  grooveName = grooveNames[groove];
-  refresh({drums: makeGroove(config, selected.guitar, groove)}, {drums: true});
-});
-get('new-drums').addEventListener('click', () => {
-  grooveName = 'Eigener Groove';
-  refresh({drums: makeGroove(config, selected.guitar, groove, true)}, {drums: true});
-});
-get('style').addEventListener('change', event => {
-  config.style = event.target.value;
-  const changeGuitar = !get('lock-guitar').checked && !(config.mode === 'melody' && melodyEdited);
-  const changeDrums = !get('lock-drums').checked;
-  const guitar = changeGuitar ? setNewGuitar() : selected.guitar;
-  if (changeDrums) {
-    groove = 0;
-    grooveName = grooveNames[groove];
-  }
-  const drums = changeDrums ? makeGroove(config, guitar, groove, true) : selected.drums;
-  refresh({style: config.style, guitar, drums}, {guitar: changeGuitar, drums: changeDrums});
-});
-for (const id of ['key', 'scale', 'mode']) {
-  get(id).addEventListener('change', event => {
-    if (id === 'mode') {
-      melodyEdited = false;
-      polyphonicRiff = false;
-    }
-    config[id] = id === 'key' ? Number(event.target.value) : event.target.value;
-    const guitar = config.mode === 'melody' && melodyEdited
-      ? transposeEditedMelody(selected.guitar, selected.key, config)
-      : id !== 'mode' && preset !== null ? originalGuitar(preset, config) : setNewGuitar();
-    refresh({[id]: config[id], guitar}, {guitar: true});
-  });
+function changeSongSetting(id,value) {
+  endComparison();saveSection();
+  config[id]=value;
+  // Song settings affect every section, never invoke a composer or replace notes.
+  for(const part of songParts){part.pattern={...part.pattern,[id]:value};if(part.meta&&id==='style')part.meta.style=value;}
+  refresh({[id]:value},{guitar:true,drums:true,lead:true,bass:true,vocal:true,keepLead:true});
 }
-get('tempo').addEventListener('change', event => {
-  const input = event.target;
-  const entered = input.valueAsNumber;
-  if (Number.isFinite(entered)) config.tempo = Math.max(55, Math.min(210, Math.round(entered)));
-  input.value = config.tempo;
-  if (config.tempo !== selected.tempo) refresh({tempo: config.tempo});
+for(const id of ['style','key','scale'])get(id).addEventListener('change',event=>changeSongSetting(id,id==='key'?Number(event.target.value):event.target.value));
+get('tempo').addEventListener('change',event=>{
+ const tempo=Number(event.target.value);
+ if(Number.isFinite(tempo)&&tempo>=55&&tempo<=210)changeSongSetting('tempo',Math.round(tempo));
+ event.target.value=config.tempo;
 });
 get('export').addEventListener('click', () => downloadMidi(selected));
 for (const part of ['guitar', 'drums', 'lead', 'bass', 'vocal']) {
@@ -1532,7 +1486,7 @@ get('melody-grid').addEventListener('click', event => {
     ? setMelodyTechnique(source, noteBar, noteStep, melodyTool)
     : editMelodyNote(source, noteBar, noteStep, pitch, {length, resize: melodyTool === 'length'});
   if (!melody) {
-    setMelodyTool(melodyTool, 'Für einen Hammer-on braucht der Ton einen vorherigen Ton, der ein bis vier Halbtöne tiefer liegt.');
+    setMelodyTool(melodyTool, melodyTool==='pull'?'Für einen Pull-off braucht der Ton einen vorherigen Ton, der ein bis vier Halbtöne höher liegt.':'Für einen Hammer-on braucht der Ton einen vorherigen Ton, der ein bis vier Halbtöne tiefer liegt.');
     return;
   }
   if (melodyTool) setMelodyTool('', 'Änderung auf diesen Ton angewendet.');
@@ -1707,10 +1661,15 @@ for (const [id, version] of [['ai-before', 'before'], ['ai-after', 'after']]) {
 get('ai-adopt').addEventListener('click', () => finishComparison(true));
 get('ai-discard').addEventListener('click', () => finishComparison(false));
 
-get('song-parts').addEventListener('click', event => {
+get('song-parts').addEventListener('click', async event => {
   const button = event.target.closest('button[data-section]');
   if (!button || playButton.disabled) return;
   const id = Number(button.dataset.section);
+  if(button.dataset.play){
+    if(playback&&!playback.song&&activeSection===id){stop();return;}
+    openSection(id);
+    return togglePlayback();
+  }
   if (!button.dataset.move) return openSection(id);
   if (playback) stop();
   endComparison(); saveSection();
@@ -1762,20 +1721,21 @@ function prepareBass(bars) {
 
 function commitBass(bars, name = 'Bearbeiteter Bass') {
   bassName = name;
+  if(bars&&composeSettings.bass.bass.tuning==='a5'){const old=selected.bass?.flat()??[];bars=bars.map(notes=>notes.map(n=>n.bassTuning||old.some(o=>o.step===n.step&&o.root===n.root&&o.length===n.length)?n:{...n,bassTuning:'a5'}));}
   refresh({bass: bars}, {bass: true});
 }
 
 function renderBassGrid(bars = selected.bass) {
   const grid = get('bass-grid');
   const columns = gridColumns(bassBar);
-  renderScaleLegend('bass-key', ' · D1–G3');
+  renderScaleLegend('bass-key', ' · '+bassTunings[composeSettings.bass.bass.tuning].name);
   startGrid(grid, 'Ton', bassBar, columns);
   const held = Array(sectionSteps()).fill(null);
   bars?.forEach((notes,bar)=>notes.forEach(note=>{
     const start = bar * stepsPerBar + note.step;
     for(let at=start;at<Math.min(sectionSteps(),start+note.length);at++) held[at]={note,bar};
   }));
-  const pitches = [...new Set([...bassPitches(config), ...(bars?.flat().map(note=>note.root) ?? [])])].sort((a,b)=>b-a);
+  const pitches = [...new Set([...bassPitches({...config,bassTuning:composeSettings.bass.bass.tuning}), ...(bars?.flat().map(note=>note.root) ?? [])])].sort((a,b)=>b-a);
   for (const pitch of pitches) {
     const name = `${keyNames[pitch%12]}${Math.floor(pitch/12)-1}`;
     const row = element('div','grid-row');
@@ -1804,14 +1764,14 @@ function readChatBass(value, context) {
   const pitches = bassPitches(context);
   if(!Array.isArray(notes)||!notes.length||notes.length>limit)throw new Error(`Der Bass muss 1 bis ${limit} Noten enthalten.`);
   const sorted=notes.map(note=>{
-    if(!note||!Number.isInteger(note.step)||note.step<0||note.step>=limit||!pitches.includes(note.pitch)||!Number.isInteger(note.duration)||note.duration<1||note.duration>limit)throw new Error('Eine Bassnote passt nicht zur Tonart, zum Tonumfang D1–G3 oder zum Raster. Bitte ChatGPT, die Vorgaben einzuhalten.');
+    if(!note||!Number.isInteger(note.step)||note.step<0||note.step>=limit||!pitches.includes(note.pitch)||!Number.isInteger(note.duration)||note.duration<1||note.duration>limit)throw new Error('Eine Bassnote passt nicht zur Tonart, zur gewählten Basslage oder zum Raster. Bitte ChatGPT, die Vorgaben einzuhalten.');
     return {...note};
   }).sort((a,b)=>a.step-b.step);
   const bars=Array.from({length:count},()=>[]);
   sorted.forEach((note,index)=>{
     const next=sorted[index+1]?.step??limit;
     if(next===note.step)throw new Error('Der Bass muss einstimmig sein; zwei Noten beginnen gleichzeitig.');
-    bars[Math.floor(note.step/16)].push({step:note.step%16,root:note.pitch,length:Math.min(note.duration,next-note.step),articulation:'single'});
+    bars[Math.floor(note.step/16)].push({step:note.step%16,root:note.pitch,length:Math.min(note.duration,next-note.step),articulation:'single',bassTuning:context.bassTuning??'dropd'});
   });
   return bars;
 }
@@ -1819,13 +1779,11 @@ function readChatBass(value, context) {
 function chatBassPrompt(context, description) {
   const compact=(bars, riff=false)=>bars?.flatMap((notes,bar)=>(riff?riffAttacks(notes):notes).map(note=>[bar*16+note.step, riff?note.pitch:note.root,note.length]))??[];
   const drums=context.drums.flatMap((beats,bar)=>beats.flatMap((hits,step)=>hits.map(hit=>[bar*16+step,hit.kind])));
-  const behavior={riff:'Folge den Grundtönen und wichtigen Anschlägen des Riffs. Spiele eine Oktave tiefer, ohne unnötige Verdopplungen in hoher Lage.',root:'Einfacher tragender Grundton-Groove, wenige Noten, bewusste Pausen und enger Bezug zur Kick.',independent:'Eigenständiges wiedererkennbares Bassmotiv mit Gegenbewegungen und kurzen Übergängen. Lasse Platz für Riff und Melodie.'}[context.bassStyle];
-  const style={stoner:'Warmer, leicht angezerrter Stoner-Bass: tief, schwer und lässig, mit Raum für ausklingende Töne.',punk:'Treibender Punk-Bass mit klarer Achtelbewegung und direktem Anschlag.',hard:'Druckvoller Hard-Rock-Bass, eng an Kick und Riff, mit gezielten Übergängen.'}[context.musicStyle];
+  const behavior={riff:'Folge den Grundtönen und wichtigen Anschlägen des Riffs. Spiele eine Oktave tiefer, ohne unnötige Verdopplungen in hoher Lage.',root:'Einfacher tragender Grundton-Groove, wenige Noten, bewusste Pausen und enger Bezug zur Kick.',independent:'Eigenständiges wiedererkennbares Bassmotiv mit Gegenbewegungen und kurzen Übergängen. Lasse Platz für Riff und Melodie.'}[effectiveBassMode(context.bassStyle,context.riff)];
+  const style=(bassStyleProfiles[context.musicStyle]??bassStyleProfiles.stoner).description;
   return [`Komponiere eine neue Bassspur zu den vorhandenen Begleitspuren. Diese bleiben unverändert.`,`${context.bars} Takte, 4/4, ${context.tempo} BPM, Grundton ${keyNames[context.key]}, Tonart ${scaleNames[context.scale]}, Stil ${chatStyleName(context)}.`,style,behavior,`Klangwunsch: ${description.trim()||'Passend zum vorhandenen Arrangement.'}`,`Riff [Einsatz,MIDI-Ton,Länge]: ${JSON.stringify(compact(context.riff,true))}`,`Melodie [Einsatz,MIDI-Ton,Länge]: ${JSON.stringify(compact(context.melody))}`,`Drums [Einsatz,Instrument]: ${JSON.stringify(drums)}`,`Erlaubte MIDI-Tonhöhen: ${bassPitches(context).join(', ')}. step sind ganzzahlige Sechzehntelpositionen 0 bis ${context.bars*16-1}; duration ist eine positive ganze Zahl in Sechzehnteln. Einstimmig, keine doppelten Einsätze, Noten enden spätestens bei Schritt ${context.bars*16}. Antworte nur mit einem JSON-Codeblock.`,JSON.stringify({notes:[{step:0,pitch:bassPitches(context)[0],duration:4},{step:8,pitch:bassPitches(context)[2],duration:4}]})].join('\n');
 }
 
-get('toggle-bass').addEventListener('click',()=>commitBass(selected.bass?null:makeBass(config,selected.guitar,selected.drums,bassStyle),'Passend zum Riff'));
-get('new-bass').addEventListener('click',()=>commitBass(makeBass(config,selected.guitar,selected.drums,bassStyle),'Eigener Bass'));
 get('bass-bar-picker').addEventListener('click',event=>{const button=event.target.closest('button[data-bar]');if(button){bassBar=Number(button.dataset.bar);renderBassGrid();renderGridPosition();}});
 get('bass-grid').addEventListener('click',event=>{
   if(suppressGridClick)return;
@@ -1839,26 +1797,12 @@ bindNoteGrid({id:'bass-grid',source:()=>selected.bass,render:renderBassGrid,comm
   cut:(bars,{bar,step,origin},current)=>cutMelodyStep(bars,bar,step,current*16+origin)});
 get('ai-bass-style').addEventListener('change',()=>{get('ai-response').value='';get('ai-prompt-preview').hidden=true;get('ai-dialog-status').textContent='Bass-Verhalten geändert. Kopiere eine neue Anfrage.';});
 
-// Both action bars use the existing handlers and the same availability rules.
-function trackActionIds() {
-  return ['new-guitar','poly-riff','variation','track-ai-guitar','export-guitar','toggle-lead','new-lead','track-ai-melody','export-lead','toggle-bass','new-bass','open-ai-bass','export-bass','change-drums','new-drums','track-ai-drums','export-drums','toggle-vocal','new-vocal','open-ai-vocal','export-vocal'];
-}
-function renderTrackActions() {
-  for (const id of trackActionIds()) {
-    const source = get(id), button = get('editor-action-' + id);
-    button.textContent = source.textContent;
-    button.disabled = source.disabled;
-    button.hidden = source.hidden;
-    if (source.hasAttribute?.('aria-pressed')) button.setAttribute('aria-pressed', source.getAttribute('aria-pressed'));
-  }
-}
-for (const id of trackActionIds()) get('editor-action-' + id).addEventListener('click', () => get(id).click());
-renderTrackActions();
+function renderTrackActions() {}
 
 function renderTabView() {
-  const tracks = {riff: selected.mode === 'riff' ? selected.guitar : null, melody: melodySource(), bass: selected.bass};
+  const tracks = {riff: selected.mode === 'riff' && selected.guitar.flat().length ? selected.guitar : null, melody: melodySource()?.flat().length ? melodySource() : null, bass: selected.bass?.flat().length ? selected.bass : null};
   const labels = {riff:'Riff', melody:'Melodie', bass:'Bass'};
-  if (!tracks[tabTrack]) tabTrack = tracks.riff ? 'riff' : tracks.melody ? 'melody' : 'bass';
+  if (!tracks[tabTrack]) tabTrack = tracks.riff ? 'riff' : tracks.melody ? 'melody' : tracks.bass ? 'bass' : 'riff';
   for (const [track, bars] of Object.entries(tracks)) {
     const button = get('tab-' + track);
     button.disabled = !bars;
@@ -1869,7 +1813,7 @@ function renderTabView() {
   get('lead-tabs-panel').hidden = tabTrack !== 'melody';
   get('bass-tabs-panel').hidden = tabTrack !== 'bass';
   get('tab-title').textContent = labels[tabTrack] + '-Tabs';
-  get('tab-tuning').textContent = tabTrack === 'bass' ? 'Bass · Drop D · D–A–D–G' : 'Drop D · D–A–D–G–H–E';
+  get('tab-tuning').textContent = tabTrack === 'bass' ? 'Bass · '+bassTunings[selected.bass?.flat().some(n=>n.bassTuning==='a5'||n.root<26)?'a5':'dropd'].name : guitarTunings[selected.guitar.flat().some(n=>n.tuning==='a7')?'a7':'dropd'].name;
   get('lead-techniques').hidden = tabTrack !== 'melody';
   if (tracks.riff) renderTabs('tabs', tracks.riff);
   if (tracks.melody) renderTabs('lead-tabs', tracks.melody);
@@ -1880,7 +1824,6 @@ for (const track of ['riff','melody','bass']) get('tab-' + track).addEventListen
   tabTrack = track;
   renderTabView();
 });
-get('header-ai-bass').addEventListener('click', () => get('open-ai-bass').click());
 
 function readRiffTechniques(value,pitches) {
   if(value===undefined) return {};
@@ -1929,26 +1872,6 @@ function applyRiffArticulation(articulation) {
   commitRiff(setRiffVoiceArticulation(selected.guitar,bar,step,pitch,articulation));
 }
 for(const articulation of ['open','mute']) get('riff-tone-'+articulation).addEventListener('click',()=>applyRiffArticulation(articulation));
-
-function renderRiffGenerationOptions() {
-  const profile=riffTechniqueProfiles[config.style];
-  get('riff-generation-title').textContent='Riff-Spielweisen beim Komponieren · '+({stoner:'Stoner Rock',hard:'Hard Rock',punk:'Punk Rock'}[config.style]);
-  for(const key of Object.keys(riffGenerationLabels)) {
-    const input=get('riff-generate-'+key);
-    input.checked=Boolean(profile[key]);input.disabled=key==='sustain'&&!profile.open;
-  }
-}
-for(const key of Object.keys(riffGenerationLabels)) get('riff-generate-'+key).addEventListener('change',()=>{
-  const profile=riffTechniqueProfiles[config.style];
-  const next={...profile,[key]:get('riff-generate-'+key).checked};
-  if(!next.open&&!next.pm) {
-    renderRiffGenerationOptions();get('riff-generation-status').textContent='Mindestens Offen oder Palm Mute muss erlaubt sein.';return;
-  }
-  if(!next.open) next.sustain=false;
-  riffTechniqueProfiles[config.style]=next;
-  renderRiffGenerationOptions();
-  get('riff-generation-status').textContent='Auswahl für diesen Stil gespeichert. Gilt für neue Riffs und ChatGPT-Anfragen; vorhandene Töne bleiben erhalten.';
-});
 
 function renderVocalGrid(bars = selected.vocal) {
   const grid = get('vocal-grid');
@@ -2002,9 +1925,6 @@ function readChatVocal(value,context) {
   for(const note of sorted)bars[Math.floor(note.step/16)].push({step:note.step%16,root:note.pitch,length:note.duration,articulation:'single'});
   return bars;
 }
-get('toggle-vocal').addEventListener('click',()=>commitVocal(selected.vocal?null:makeVocal(config,selected.guitar,selected.drums,vocalRange),'Passend zum Arrangement'));
-get('new-vocal').addEventListener('click',()=>commitVocal(makeVocal(config,selected.guitar,selected.drums,vocalRange,selected.vocal),'Neue Gesangsmelodie'));
-get('header-ai-vocal').addEventListener('click',()=>get('open-ai-vocal').click());
 get('vocal-bar-picker').addEventListener('click',event=>{const button=event.target.closest('button[data-bar]');if(button){vocalBar=Number(button.dataset.bar);renderVocalGrid();renderGridPosition();}});
 get('vocal-grid').addEventListener('click',event=>{
   if(suppressGridClick)return;const cell=event.target.closest('button[data-pitch]');if(!cell)return;
@@ -2018,13 +1938,7 @@ get('vocal-range').addEventListener('change',()=>{vocalRange=get('vocal-range').
 get('ai-vocal-range').addEventListener('change',()=>{get('ai-response').value='';get('ai-prompt-preview').hidden=true;aiPromptContext=null;get('ai-dialog-status').textContent='Stimmlage geändert. Kopiere eine neue Anfrage.';});
 renderVocalGrid();
 
-function renderStonerChoice() {
-  get('stoner-options').hidden=config.style!=='stoner';
-  get('stoner-style').value=config.stonerStyle??'classic';
-  get('stoner-description').textContent=stonerProfile(config).description+' Wirkt auf neue Vorschläge aller fünf Spuren und ChatGPT. Tempo und vorhandene Noten bleiben erhalten.';
-}
-get('stoner-style').addEventListener('change',()=>{
-  config.stonerStyle=get('stoner-style').value;
-  selected={...selected,stonerStyle:config.stonerStyle};
-  saveSection();renderStonerChoice();
-});
+
+bindComposeSettings();
+
+get('guitar-tuning').addEventListener('change',event=>{endComparison();config.tuning=event.target.value;refresh({tuning:config.tuning},{guitar:true,keepLead:true});});

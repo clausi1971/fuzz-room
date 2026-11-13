@@ -1,37 +1,33 @@
-# Fuzz Room
+# Fuzz Room – Version 2
 
-Webstudio für Stoner-Rock-Riffs, Gitarrenmelodien und Drums. Läuft vollständig im Browser, ohne Installation und ohne eigenen Server.
+Browser-Musikstudio mit fünf bearbeitbaren Spuren: Riff, Melodie, Bass, Gesang und Drums.
 
-## Funktionen
+Webseite: https://clausi1971.github.io/fuzz-room/
 
-- Riff-, Melodie-, Bass- und Drumraster mit 4, 8 oder 16 Takten pro Songteil
-- Benennbare und verschiebbare Songteile; Loop- und Song-Wiedergabe
-- Grundton, Moll, Dur, Phrygisch und Blues; farbige Tonrollen
-- Offen/PM, mehrstimmige Riffs, Hammer-ons, Slides und Bendings
-- Lautstärken, Solo, Drum-Markierungen sowie Rückgängig/Wiederholen
-- Einzelspur- und Mehrspur-MIDI mit Pitch-Bend-Daten und eigener Dateinamensabfrage
-- Vollständige Arrangements als JSON speichern und wieder importieren
+## Komponieren
 
-## ChatGPT
+Musikstile: Stoner Rock, Punk Rock, Hard Rock, Nu Metal und Korn-inspiriert. Neue App-Generatoren kombinieren auswählbare Rhythmus-, Motiv- und Phrasenbausteine. Gemeinsame Song-Einstellungen: Stil, Grundton, Tonart und Tempo; eigene Einstellungen je Spur. Die Spuren starten leer.
 
-Die App erstellt eine Anfrage, die du selbst in deinen eigenen ChatGPT-Chat kopierst. Die JSON-Antwort fügst du anschließend in die App ein und kannst die neue Spur vor dem Übernehmen vergleichen. Die App meldet sich nicht bei ChatGPT an und enthält keine API-Schlüssel oder Zugangsdaten.
+„Arrangement erzeugen“ bietet einen ganzen Song (acht Teile, 52 Takte) oder nur den geöffneten Teil. Alle fünf Spuren werden automatisch passend zum Stil erzeugt. Vor dem Ersetzen vorhandener Inhalte ist eine Bestätigung erforderlich. Ganze Song-Ersetzungen lassen sich nicht über die Spur-Historie zurücknehmen; vorher als Datei speichern. Wiederkehrende Strophen und Refrains haben unabhängig bearbeitbare Kopien derselben Motive.
 
-## Lokal starten
+## Bearbeiten und abspielen
 
-Öffne `index.html` in einem aktuellen Browser oder stelle diesen Ordner mit einem lokalen Webserver bereit. Für Audio musst du einmal Play anklicken.
+Aufklappbare Raster, Lautstärke, Mute und Solo pro Spur, bis zu 30 Rückgängig-/Wiederholen-Schritte je Spur und Teil, Gitarren-/Bass-Tabulaturen sowie frei benennbare und verschiebbare Songteile. Play/Stopp an jeder Songkarte startet den Teil ab Takt 1 als Loop. Wiedergabe des ganzen Songs ist ebenfalls möglich. Klick auf eine Taktüberschrift während der Wiedergabe schaltet einen gemeinsamen Ein-Takt-Loop.
+
+Riff: einzelne Anschläge, PM-Anteil, manuelle Spieltechniken, Drop D oder tiefe siebensaitige A-Stimmung. Melodie: Phrasenarten, optionale Techniken, zwei Gitarrenklänge, Oktavverschiebung. Bass: drei Arbeitsweisen und zwei Stimmungen; ohne Riff entsteht automatisch eine eigenständige Basslinie. Drums: vollständige Groove-Bausteine und drei Toms. Gesang: eigene Melodie, vier Phrasenarten, drei Stimmlagen, synthetische Ah-Stimme oder Orientierungston ohne Text.
+
+## Dateien und ChatGPT
+
+Arrangements als JSON auf dem eigenen Gerät speichern und wieder importieren. Alte V1-Dateien bleiben importierbar. MIDI exportiert einzelne Spuren oder das Arrangement einschließlich unterstützter Spielbewegungen; der Klang hängt vom verwendeten MIDI-Instrument ab. Kein automatisches Speichern auf einem Server.
+
+ChatGPT wird manuell über kopierte Anfragen und eingefügte JSON-Antworten genutzt. Besucher verwenden ihren eigenen ChatGPT-Chat. Die Webseite enthält keine Anmeldedaten oder API-Schlüssel und greift auf kein gemeinsames ChatGPT-Konto zu.
+
+## Lokal starten und prüfen
+
+index.html im Browser öffnen. Für Audio eine Wiedergabeaktion anklicken. Die Klangmodelle sind synthetische Hörhilfen.
+
+Tests: node --test tests/*.test.cjs
 
 ## GitHub Pages
 
-Die statischen Dateien liegen direkt im Hauptverzeichnis. Unter Settings → Pages: Deploy from a branch, Branch `main`, Ordner `/ (root)`. Es ist kein Build-Schritt notwendig.
-
-## Dateien und Klang
-
-Arrangements werden als Dateien auf deinem Gerät gespeichert. Sichere deinen Song vor dem Schließen oder Neuladen. Gitarren und Drums werden mit Web Audio modelliert. Ein MIDI-Export enthält Noten und Spielbewegungen; der Klang hängt vom Instrument im jeweiligen MIDI-Programm ab.
-
-## Bass und Toms
-
-Die optionale vierte Spur ist ein bearbeitbarer E-Bass mit Lautstärke, Solo, Rückgängig und MIDI-Export. Bei ChatGPT kannst du zwischen Riff mitspielen, Grundton-Groove und eigenständiger Basslinie wählen. Das Drumkit enthält High Tom, Mid Tom und Floor Tom als eigene Zeilen. Alte Arrangement-Dateien bleiben importierbar; neue Dateien speichern auch die Bassspur.
-
-## Tests
-
-Mit installiertem Node.js: `node --test tests/studio.test.cjs`. Die Tests benötigen keine zusätzlichen Pakete.
+Statische Dateien im Hauptverzeichnis, Branch main, Pages-Ordner / (root), kein Build erforderlich. Version 2 ersetzt die bisherige Webseite; Version 1 bleibt in der Git-Historie erhalten. Quellen und eigene Kompositionsregeln sind im Ordner docs dokumentiert.
